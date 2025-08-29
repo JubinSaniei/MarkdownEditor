@@ -1,0 +1,103 @@
+{
+  "name": "markdown-editor-app",
+  "version": "1.0.0",
+  "description": "Angular + Electron Markdown Editor",
+  "main": "public/electron.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "ng serve",
+    "build": "ng build",
+    "electron": "electron .",
+    "electron-dev": "concurrently \"ng serve\" \"wait-on http://localhost:4200 && electron .\"",
+    "electron-dev:4201": "concurrently \"ng serve --port 4201\" \"wait-on http://localhost:4201 && electron .\"",
+    "electron-dev:4202": "concurrently \"ng serve --port 4202\" \"wait-on http://localhost:4202 && electron .\"",
+    "build-electron": "ng build --configuration production && electron-builder",
+    "dist": "npm run build && electron-builder --publish=never"
+  },
+  "keywords": [
+    "angular",
+    "electron",
+    "markdown",
+    "editor"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@angular-devkit/build-angular": "^20.2.0",
+    "@angular/animations": "^20.2.1",
+    "@angular/cli": "^20.2.0",
+    "@angular/common": "^20.2.1",
+    "@angular/compiler": "^20.2.1",
+    "@angular/compiler-cli": "^20.2.1",
+    "@angular/core": "^20.2.1",
+    "@angular/forms": "^20.2.1",
+    "@angular/platform-browser": "^20.2.1",
+    "@angular/platform-browser-dynamic": "^20.2.1",
+    "@angular/router": "^20.2.1",
+    "concurrently": "^9.2.1",
+    "highlight.js": "^11.11.1",
+    "marked": "^16.2.1",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "wait-on": "^8.0.4",
+    "zone.js": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/highlight.js": "^9.12.4",
+    "@types/marked": "^5.0.2",
+    "@types/node": "^24.3.0",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "build": {
+    "appId": "com.example.markdowneditor",
+    "productName": "Markdown Editor",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "public/electron.js",
+      "public/preload.js",
+      "src/assets/icon.*"
+    ],
+    "win": {
+      "icon": "src/assets/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "src/assets/icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "icon": "src/assets/icon.png",
+      "target": "AppImage"
+    },
+    "portable": {
+      "artifactName": "MarkdownEditor-Portable.exe"
+    },
+    "nsis": {
+      "artifactName": "MarkdownEditor-Setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "forceCodeSigning": false,
+    "buildDependenciesFromSource": false
+  }
+}

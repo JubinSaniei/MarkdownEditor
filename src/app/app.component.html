@@ -1,0 +1,92 @@
+<div class="container" (click)="onGlobalClick($event)">
+  <div class="sidebar" [class.collapsed]="isExplorerCollapsed">
+    <app-file-explorer 
+      #fileExplorer
+      [workspaceFiles]="workspaceFiles"
+      (fileSelected)="onFileSelected($event)"
+      (fileOpened)="onFileOpened($event)"
+      (fileAdded)="onFileAdded($event)"
+      (fileRemoved)="onFileRemoved($event)"
+      (newFileCreated)="onNewFileCreated($event)"
+      (fileDeleted)="onFileDeleted($event)">
+    </app-file-explorer>
+  </div>
+  
+  <!-- Collapsed sidebar handle -->
+  <div class="sidebar-handle" [class.visible]="isExplorerCollapsed" (click)="toggleExplorer()">
+  <span class="handle-icon">▶</span>
+    <span class="handle-text">Explorer</span>
+  </div>
+  
+  <div class="main-content">
+    <div class="toolbar">
+      <button class="btn-toggle" (click)="toggleExplorer()" title="Toggle Explorer" *ngIf="!isExplorerCollapsed">
+        ◀
+      </button>
+      <!-- View mode toggle button -->
+      <button class="btn btn-secondary btn-viewmode" (click)="toggleViewMode()" title="Toggle View Mode">
+        {{ viewModeIcon }}
+      </button>
+      <!-- Theme toggle button -->
+      <button class="btn btn-secondary" (click)="toggleTheme()" title="Toggle Dark/Light Theme">
+        {{ themeIcon }}
+      </button>
+      <span class="file-path">{{ currentFilePath || 'No file selected' }}</span>
+      
+      <!-- Search Bar -->
+      <div class="search-container" [class.visible]="showSearch">
+        <div class="search-bar">
+          <input 
+            type="text" 
+            class="search-input" 
+            placeholder="Search in document..." 
+            [(ngModel)]="searchQuery"
+            (input)="onSearchQueryChange()"
+            (keydown)="onSearchKeyDown($event)"
+            #searchInput>
+          <div class="search-controls">
+            <button class="btn-search" (click)="findPrevious()" [disabled]="!searchQuery" title="Previous (Shift+F3)">↑</button>
+            <button class="btn-search" (click)="findNext()" [disabled]="!searchQuery" title="Next (F3)">↓</button>
+            <span class="search-info" *ngIf="searchQuery">{{ currentMatch }} / {{ totalMatches }}</span>
+            <button class="btn-search close" (click)="closeSearch()" title="Close (Escape)">✕</button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="toolbar-actions">
+        <button class="btn btn-secondary" (click)="toggleSearch()" title="Search (Ctrl+F)">🔍</button>
+        <div class="dropdown" [class.open]="showSaveDropdown">
+          <button class="btn dropdown-toggle" (click)="toggleSaveDropdown()" title="Save Options">
+            💾 Save
+            <span class="dropdown-arrow">▼</span>
+          </button>
+          <div class="dropdown-menu">
+            <button class="dropdown-item" *ngIf="currentFilePath" (click)="saveFile(); closeSaveDropdown()">
+              💾 Save
+            </button>
+            <button class="dropdown-item" (click)="saveAsFile(); closeSaveDropdown()">
+              📄 Save As...
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="editor-container" (keydown)="onGlobalKeyDown($event)">
+      <div class="editor" *ngIf="viewMode === 'edit' || viewMode === 'split'" (scroll)="syncScroll($event)">
+        <app-markdown-editor 
+          #markdownEditor
+          [content]="currentFileContent"
+          (contentChange)="onContentChanged($event)">
+        </app-markdown-editor>
+      </div>
+      
+      <div class="preview" *ngIf="viewMode === 'preview' || viewMode === 'split'" (scroll)="syncScroll($event)">
+        <app-markdown-preview 
+          #markdownPreview
+          [content]="currentFileContent">
+        </app-markdown-preview>
+      </div>
+    </div>
+  </div>
+</div>

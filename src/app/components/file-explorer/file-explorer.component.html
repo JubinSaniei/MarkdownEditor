@@ -1,0 +1,105 @@
+<div class="file-explorer">
+  <div class="explorer-header">
+    <h3>Workspace Files</h3>
+    <div class="header-buttons">
+      <button class="btn btn-secondary btn-icon" (click)="refreshWorkspace()" [disabled]="isLoading" title="Refresh Workspace">
+        <span *ngIf="!isLoading">🔄</span>
+        <span *ngIf="isLoading">⏳</span>
+      </button>
+      <button class="btn btn-secondary btn-icon" (click)="createNewFile()" title="New Markdown File">
+        📄
+      </button>
+      <button class="btn btn-primary" (click)="addFile()" title="Add Markdown File to Workspace">
+        ➕ Add File
+      </button>
+    </div>
+  </div>
+  
+  <div class="file-list" 
+       *ngIf="folderGroups.length > 0"
+       role="tree" 
+       tabindex="0"
+       (keydown)="onFileListKeyDown($event)"
+       aria-label="Workspace files organized by folders">
+    
+    <div *ngFor="let group of folderGroups; trackBy: trackByFolderPath" class="folder-group">
+      
+      <!-- Folder Header -->
+      <div class="folder-header" 
+           role="treeitem"
+           [attr.aria-expanded]="group.expanded"
+           [attr.aria-label]="'Folder: ' + group.folderName + ', ' + group.files.length + ' files'"
+           tabindex="0"
+           (click)="toggleFolderGroup(group)">
+        
+        <div class="folder-content">
+          <div class="folder-icon">
+            <span class="expand-icon">{{ group.expanded ? '▼' : '▶' }}</span>
+            <span class="icon">📁</span>
+          </div>
+          <div class="folder-details">
+            <div class="folder-name">{{ group.folderName }}</div>
+            <div class="folder-info">{{ group.files.length }} file{{ group.files.length !== 1 ? 's' : '' }}</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Files in Folder -->
+      <div class="folder-files" 
+           *ngIf="group.expanded"
+           role="group"
+           [attr.aria-label]="'Files in ' + group.folderName">
+        
+        <div *ngFor="let file of group.files; trackBy: trackByPath" 
+             class="file-item nested" 
+             [class.selected]="isFileSelected(file)"
+             role="treeitem"
+             tabindex="0"
+             [attr.aria-label]="getFileAriaLabel(file)"
+             (click)="onFileClick(file, $event)"
+             (keydown)="onFileKeyDown(file, $event)">
+          
+          <div class="file-content">
+            <div class="file-icon">📝</div>
+            <div class="file-details">
+              <div class="file-name">{{ getDisplayName(file) }}</div>
+            </div>
+          </div>
+          
+          <div class="file-actions">
+            <button class="btn-icon action-btn" 
+                    (click)="removeFileFromWorkspace(file.path, $event)" 
+                    title="Remove from workspace"
+                    aria-label="Remove {{ file.name }} from workspace">
+              ✖
+            </button>
+            <button class="btn-icon action-btn delete-btn" 
+                    (click)="deleteFile(file.path, $event)" 
+                    title="Delete file permanently"
+                    aria-label="Delete {{ file.name }} permanently">
+              🗑️
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="empty-state" *ngIf="!folderGroups || folderGroups.length === 0">
+    <div class="empty-content">
+      <div class="empty-icon">📁</div>
+      <h4>No Files in Workspace</h4>
+      <p>Add markdown files to get started with your workspace</p>
+      <button class="btn btn-primary" (click)="addFile()">
+        ➕ Add Your First File
+      </button>
+    </div>
+  </div>
+  
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="loading-content">
+      <div class="loading-spinner">⏳</div>
+      <p>Loading workspace files...</p>
+    </div>
+  </div>
+</div>

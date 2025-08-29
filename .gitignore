@@ -1,0 +1,8 @@
+node_modules
+.angular
+.claude
+.github
+.vscode
+dist-electron
+build
+dist

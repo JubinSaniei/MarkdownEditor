@@ -1,0 +1,12 @@
+<div class="editor-wrapper">
+  <div class="editor-container">
+    <div class="highlight-backdrop" #highlightBackdrop></div>
+    <textarea 
+      class="markdown-editor"
+      [value]="content"
+      (input)="onContentChange($event)"
+      placeholder="Start typing your markdown here..."
+      #editor>
+    </textarea>
+  </div>
+</div>

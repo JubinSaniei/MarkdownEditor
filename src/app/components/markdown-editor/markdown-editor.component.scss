@@ -1,0 +1,140 @@
+.editor-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.editor-container {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+
+.highlight-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-8) var(--space-6);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: transparent;
+  background: transparent;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  
+  .search-highlight {
+    background-color: var(--warning-500);
+    color: transparent;
+    border-radius: var(--radius-sm);
+    
+    &.current {
+      background-color: var(--primary-500);
+      box-shadow: 0 0 0 2px var(--primary-200);
+    }
+  }
+}
+
+.search-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  transform: translateY(-100%);
+  transition: transform var(--transition-base);
+  
+  &.visible {
+    transform: translateY(0);
+  }
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1);
+  margin: var(--space-2);
+  min-width: 320px;
+  backdrop-filter: blur(8px);
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  min-width: 160px;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+  background: var(--background-secondary);
+  color: var(--text-primary);
+  
+  &:focus {
+    background: var(--background-tertiary);
+  }
+}
+
+.search-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+// Search buttons use global .btn-search class
+
+.search-info {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin: 0 var(--space-1);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.markdown-editor {
+  position: relative;
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: var(--space-8) var(--space-6);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  resize: none;
+  background: var(--background-secondary);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  z-index: 2;
+}
+
+.markdown-editor {
+  &::placeholder {
+    color: var(--text-tertiary);
+    font-style: italic;
+  }
+  
+  &.search-active {
+    background: var(--surface-overlay);
+  }
+  
+  &:focus {
+    background: var(--background-secondary);
+    box-shadow: inset 0 0 0 1px var(--primary-200);
+    
+    &.search-active {
+      background: var(--surface-overlay);
+    }
+  }
+}
+
