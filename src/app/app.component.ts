@@ -161,14 +161,16 @@ export class AppComponent implements OnInit, AfterViewInit {
     this.currentFileContent = content;
   }
 
-  onFileAdded(filePath: string) {
-    // File added to workspace
-    if (!this.workspaceFiles.includes(filePath)) {
-      // Create a new array reference to trigger ngOnChanges
-      this.workspaceFiles = [...this.workspaceFiles, filePath];
+  onMultipleFilesAdded(filePaths: string[]) {
+    // Add files to workspace efficiently (handles both single and multiple files)
+    const newFiles = filePaths.filter(filePath => !this.workspaceFiles.includes(filePath));
+    
+    if (newFiles.length > 0) {
+      // Add all new files at once to trigger ngOnChanges only once
+      this.workspaceFiles = [...this.workspaceFiles, ...newFiles];
       this.saveWorkspaceSettings();
       
-      // Refresh the workspace
+      // Single refresh for all files
       setTimeout(() => {
         if (this.fileExplorer) {
           this.fileExplorer.refreshWorkspace();

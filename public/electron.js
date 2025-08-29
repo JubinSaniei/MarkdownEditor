@@ -165,6 +165,21 @@ ipcMain.handle('select-file', async () => {
   return null;
 });
 
+ipcMain.handle('select-multiple-files', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Markdown Files', extensions: ['md', 'markdown'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+  
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths;
+  }
+  return [];
+});
+
 ipcMain.handle('select-folder-or-file', async () => {
   // Show file dialog that properly displays markdown files
   const result = await dialog.showOpenDialog(mainWindow, {

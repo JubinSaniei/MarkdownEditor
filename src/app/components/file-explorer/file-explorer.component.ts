@@ -33,7 +33,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   @Input() workspaceFiles: string[] = []; // Array of file paths instead of folder paths
   @Output() fileSelected = new EventEmitter<string>();
   @Output() fileOpened = new EventEmitter<string>();
-  @Output() fileAdded = new EventEmitter<string>();
+  @Output() multipleFilesAdded = new EventEmitter<string[]>();
   @Output() fileRemoved = new EventEmitter<string>();
   @Output() newFileCreated = new EventEmitter<{ filePath: string; content: string }>();
   @Output() fileDeleted = new EventEmitter<string>();
@@ -67,15 +67,24 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * Opens file dialog to select a .md file and adds it to workspace
+   * Opens file dialog to select markdown files and adds them to workspace
+   * Supports both single and multiple file selection
    */
-  async addFile() {
-    const result = await this.electronService.selectFile();
-    if (result && this.fileService.isValidMarkdownPath(result)) {
-      this.fileAdded.emit(result);
-    } else if (result) {
-      console.warn('Selected file is not a markdown file:', result);
-      // Could show user message here
+  async addMultipleFiles() {
+    const results = await this.electronService.selectMultipleFiles();
+    if (results && results.length > 0) {
+      const validFiles = results.filter(filePath => this.fileService.isValidMarkdownPath(filePath));
+      
+      // Emit all valid files at once for efficient processing
+      if (validFiles.length > 0) {
+        this.multipleFilesAdded.emit(validFiles);
+      }
+
+      // Show warning for invalid files
+      const invalidFiles = results.filter(filePath => !this.fileService.isValidMarkdownPath(filePath));
+      if (invalidFiles.length > 0) {
+        console.warn('Some selected files are not markdown files:', invalidFiles);
+      }
     }
   }
 
@@ -88,10 +97,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     if (result.success && result.filePath && result.content !== undefined) {
       // Emit events for the new file
       this.newFileCreated.emit({ filePath: result.filePath, content: result.content });
-      this.fileAdded.emit(result.filePath);
-      
-      // Refresh the workspace to show the new file
-      this.refreshWorkspace();
+      this.multipleFilesAdded.emit([result.filePath]);
     } else if (result.error && !result.cancelled) {
       console.error('Failed to create new file:', result.error);
     }

@@ -31,6 +31,13 @@ export class ElectronService {
     return null;
   }
 
+  async selectMultipleFiles(): Promise<string[]> {
+    if (this.isElectron) {
+      return await window.electronAPI.selectMultipleFiles();
+    }
+    return [];
+  }
+
   async selectFolderOrFile(): Promise<{ path: string; isDirectory: boolean } | null> {
     if (this.isElectron) {
       return await window.electronAPI.selectFolderOrFile();
