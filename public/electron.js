@@ -76,15 +76,17 @@ async function createWindow() {
     icon: path.join(__dirname, '../src/assets/icon.png')
   });
 
+  // (Context menu added later after load logic to avoid duplicate definitions)
+
   // Load the Angular app with dynamic port detection
-  const isDev = process.env.NODE_ENV === 'development';
+  // Consider development if app isn't packaged OR explicit env var set
+  const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
   let url;
   
   if (isDev) {
     const port = await findAngularDevServerPort();
     url = `http://localhost:${port}`;
     console.log(`Loading Angular app from: ${url}`);
-    mainWindow.webContents.openDevTools();
   } else {
     url = path.join(__dirname, '../dist/index.html');
     console.log(`Loading production build from: ${url}`);
@@ -112,6 +114,40 @@ async function createWindow() {
       app.quit();
     }
   }
+
+  // DevTools helpers (open automatically in dev once content is loaded)
+  if (isDev) {
+    mainWindow.webContents.once('did-frame-finish-load', () => {
+      if (!mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+      }
+    });
+  }
+
+  // Simple context menu to toggle DevTools anywhere
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Reload', click: () => mainWindow.reload() },
+    { label: 'Toggle DevTools (F12)', click: () => mainWindow.webContents.toggleDevTools() }
+  ]);
+  mainWindow.webContents.on('context-menu', () => contextMenu.popup());
+
+  // Keyboard shortcuts for DevTools even with no application menu
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // F12
+    if (input.type === 'keyDown' && input.code === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+    // Ctrl+Shift+I / Cmd+Alt+I
+    if (
+      input.type === 'keyDown' &&
+      ((input.control && input.shift && input.code === 'KeyI') || // Windows/Linux
+        (input.meta && input.alt && input.code === 'KeyI')) // macOS style
+    ) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
 
   // Handle window closed
   mainWindow.on('closed', () => {
