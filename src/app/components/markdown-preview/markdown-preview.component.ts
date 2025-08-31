@@ -13,13 +13,8 @@ import hljs from 'highlight.js';
 export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
   @Input() content: string = '';
   @ViewChild('previewContent') previewElement!: ElementRef<HTMLDivElement>;
-  @ViewChild('searchInput') searchInputElement!: ElementRef<HTMLInputElement>;
   
   htmlContent: SafeHtml = '';
-  showSearch: boolean = false;
-  searchQuery: string = '';
-  currentMatch: number = 0;
-  totalMatches: number = 0;
   originalHtmlContent: string = '';
 
   constructor(private sanitizer: DomSanitizer) {
@@ -106,80 +101,13 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
     this.renderMarkdown();
   }
 
-  onPreviewKeyDown(event: KeyboardEvent) {
-    // Ctrl+F to open search
-    if (event.ctrlKey && event.key === 'f') {
-      event.preventDefault();
-      this.openSearch();
-    }
-    // F3 for next, Shift+F3 for previous
-    else if (event.key === 'F3') {
-      event.preventDefault();
-      if (event.shiftKey) {
-        this.findPrevious();
-      } else {
-        this.findNext();
-      }
-    }
-    // Escape to close search
-    else if (event.key === 'Escape' && this.showSearch) {
-      this.closeSearch();
-    }
-  }
-
-  onSearchKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      if (event.shiftKey) {
-        this.findPrevious();
-      } else {
-        this.findNext();
-      }
-    } else if (event.key === 'F3') {
-      event.preventDefault();
-      if (event.shiftKey) {
-        this.findPrevious();
-      } else {
-        this.findNext();
-      }
-    } else if (event.key === 'Escape') {
-      this.closeSearch();
-    }
-  }
-
-  onSearchQueryChange() {
-    this.performSearch();
-  }
-
-  openSearch() {
-    this.showSearch = true;
-    setTimeout(() => {
-      if (this.searchInputElement) {
-        this.searchInputElement.nativeElement.focus();
-      }
-    }, 100);
-  }
-
-  closeSearch() {
-    this.showSearch = false;
-    this.searchQuery = '';
-    this.currentMatch = 0;
-    this.totalMatches = 0;
-    // Restore original content without highlights
-    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
-    // Focus back to preview
-    if (this.previewElement) {
-      this.previewElement.nativeElement.focus();
-    }
-  }
-
-  performSearch() {
-    // Restore original content
-    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
-    this.currentMatch = 0;
-    this.totalMatches = 0;
-
-    if (!this.searchQuery || !this.originalHtmlContent) {
+  /**
+   * Highlight search results in the preview
+   */
+  highlightSearchResults(query: string, results: any[], currentIndex: number) {
+    if (!query || !results.length) {
+      // Restore original content without highlights
+      this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
       return;
     }
 
@@ -187,38 +115,25 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = this.originalHtmlContent;
     
-    // Find and highlight all matches
-    const textContent = tempDiv.textContent || '';
-    const query = this.searchQuery.toLowerCase();
-    const matches = [];
-    let index = 0;
+    this.highlightMatches(tempDiv, query);
+    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(tempDiv.innerHTML);
     
-    while ((index = textContent.toLowerCase().indexOf(query, index)) !== -1) {
-      matches.push(index);
-      index += query.length;
-    }
-
-    this.totalMatches = matches.length;
-    
-    if (this.totalMatches > 0) {
-      this.currentMatch = 1;
-      this.highlightMatches(tempDiv, query);
-      this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(tempDiv.innerHTML);
-    }
+    // Scroll to current result after DOM update
+    requestAnimationFrame(() => {
+      this.scrollToCurrentMatch(currentIndex);
+    });
   }
 
-  findNext() {
-    if (this.totalMatches === 0) return;
-    
-    this.currentMatch = this.currentMatch < this.totalMatches ? this.currentMatch + 1 : 1;
-    this.updateHighlights();
-  }
-
-  findPrevious() {
-    if (this.totalMatches === 0) return;
-    
-    this.currentMatch = this.currentMatch > 1 ? this.currentMatch - 1 : this.totalMatches;
-    this.updateHighlights();
+  /**
+   * Clean up search highlighting - called by parent component
+   */
+  closeSearch() {
+    // Restore original content without highlights
+    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
+    // Focus back to preview
+    if (this.previewElement) {
+      this.previewElement.nativeElement.focus();
+    }
   }
 
   private highlightMatches(element: HTMLElement, query: string) {
@@ -252,7 +167,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
           
           // Add highlighted match
           const matchElement = document.createElement('mark');
-          matchElement.className = matchIndex === 0 ? 'search-highlight current' : 'search-highlight';
+          matchElement.className = 'search-highlight';
           matchElement.textContent = text.substring(index, index + query.length);
           parts.push(matchElement);
           
@@ -276,12 +191,14 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
     });
   }
 
-  private updateHighlights() {
+  private scrollToCurrentMatch(currentIndex: number) {
     if (!this.previewElement) return;
     
     const highlights = this.previewElement.nativeElement.querySelectorAll('.search-highlight');
+    
+    // Update current class
     highlights.forEach((highlight, index) => {
-      highlight.classList.toggle('current', index === this.currentMatch - 1);
+      highlight.classList.toggle('current', index === currentIndex - 1);
     });
     
     // Scroll to current match
@@ -290,6 +207,8 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
       currentHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
+
+
 
   copyCodeToClipboard(codeId: string): void {
     const codeElement = document.getElementById(codeId);
@@ -375,10 +294,6 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy {
       this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
     }
     
-    // Re-perform search if it's active
-    if (this.showSearch && this.searchQuery) {
-      setTimeout(() => this.performSearch(), 100);
-    }
   }
 
   private postProcessHtml(html: string): string {

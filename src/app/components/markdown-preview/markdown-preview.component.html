@@ -1,27 +1,6 @@
 <div class="preview-wrapper">
-  <!-- Search Bar for Preview -->
-  <div class="search-container" [class.visible]="showSearch">
-    <div class="search-bar">
-      <input 
-        type="text" 
-        class="search-input" 
-        placeholder="Search in preview..." 
-        [(ngModel)]="searchQuery"
-        (input)="onSearchQueryChange()"
-        (keydown)="onSearchKeyDown($event)"
-        #searchInput>
-      <div class="search-controls">
-        <button class="btn-search" (click)="findPrevious()" [disabled]="!searchQuery" title="Previous (Shift+F3)">↑</button>
-        <button class="btn-search" (click)="findNext()" [disabled]="!searchQuery" title="Next (F3)">↓</button>
-        <span class="search-info" *ngIf="searchQuery">{{ currentMatch }} / {{ totalMatches }}</span>
-        <button class="btn-search close" (click)="closeSearch()" title="Close (Escape)">✕</button>
-      </div>
-    </div>
-  </div>
-  
   <div class="preview-content" 
        [innerHTML]="htmlContent"
-       (keydown)="onPreviewKeyDown($event)"
        tabindex="0"
        #previewContent></div>
 </div>

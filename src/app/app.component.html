@@ -34,20 +34,20 @@
       <span class="file-path">{{ currentFilePath || 'No file selected' }}</span>
       
       <!-- Search Bar -->
-      <div class="search-container" [class.visible]="showSearch">
+      <div class="search-container" [class.visible]="searchState.isActive">
         <div class="search-bar">
           <input 
             type="text" 
             class="search-input" 
             placeholder="Search in document..." 
-            [(ngModel)]="searchQuery"
-            (input)="onSearchQueryChange()"
+            [value]="searchState.query"
+            (input)="onSearchQueryChange($event.target.value)"
             (keydown)="onSearchKeyDown($event)"
             #searchInput>
           <div class="search-controls">
-            <button class="btn-search" (click)="findPrevious()" [disabled]="!searchQuery" title="Previous (Shift+F3)">↑</button>
-            <button class="btn-search" (click)="findNext()" [disabled]="!searchQuery" title="Next (F3)">↓</button>
-            <span class="search-info" *ngIf="searchQuery">{{ currentMatch }} / {{ totalMatches }}</span>
+            <button class="btn-search" (click)="findPrevious()" [disabled]="!searchState.query" title="Previous (Shift+F3)">↑</button>
+            <button class="btn-search" (click)="findNext()" [disabled]="!searchState.query" title="Next (F3)">↓</button>
+            <span class="search-info" *ngIf="searchState.query">{{ searchState.currentIndex }} / {{ searchState.totalMatches }}</span>
             <button class="btn-search close" (click)="closeSearch()" title="Close (Escape)">✕</button>
           </div>
         </div>
@@ -73,7 +73,7 @@
     </div>
     
     <div class="editor-container" (keydown)="onGlobalKeyDown($event)">
-      <div class="editor" *ngIf="viewMode === 'edit' || viewMode === 'split'" (scroll)="syncScroll($event)">
+      <div class="editor" *ngIf="viewMode === 'edit' || viewMode === 'split'">
         <app-markdown-editor 
           #markdownEditor
           [content]="currentFileContent"
@@ -81,7 +81,7 @@
         </app-markdown-editor>
       </div>
       
-      <div class="preview" *ngIf="viewMode === 'preview' || viewMode === 'split'" (scroll)="syncScroll($event)">
+      <div class="preview" *ngIf="viewMode === 'preview' || viewMode === 'split'">
         <app-markdown-preview 
           #markdownPreview
           [content]="currentFileContent">

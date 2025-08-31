@@ -1,7 +1,11 @@
-import { Component, OnInit, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { ElectronService } from './services/electron.service';
 import { FileService } from './services/file.service';
 import { ThemeService } from './services/theme.service';
+import { ScrollSyncService } from './services/scroll-sync.service';
+import { SearchService } from './services/search.service';
+import { SearchState, SearchMode, SearchTarget } from './interfaces/search.interface';
 import { FileExplorerComponent } from './components/file-explorer/file-explorer.component';
 import { MarkdownEditorComponent } from './components/markdown-editor/markdown-editor.component';
 import { MarkdownPreviewComponent } from './components/markdown-preview/markdown-preview.component';
@@ -12,11 +16,15 @@ import { MarkdownPreviewComponent } from './components/markdown-preview/markdown
   styleUrls: ['./app.component.scss'],
   standalone: false
 })
-export class AppComponent implements OnInit, AfterViewInit {
+export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(FileExplorerComponent) fileExplorer!: FileExplorerComponent;
   @ViewChild('markdownEditor') markdownEditor!: MarkdownEditorComponent;
   @ViewChild('markdownPreview') markdownPreview!: MarkdownPreviewComponent;
   @ViewChild('searchInput') searchInputElement!: ElementRef<HTMLInputElement>;
+  
+  // ViewChild references for scroll sync containers
+  @ViewChild('markdownEditor', { read: ElementRef }) editorContainer!: ElementRef;
+  @ViewChild('markdownPreview', { read: ElementRef }) previewContainer!: ElementRef;
   
   title = 'Markdown Editor';
   currentFilePath: string | null = null;
@@ -25,78 +33,84 @@ export class AppComponent implements OnInit, AfterViewInit {
   isExplorerCollapsed: boolean = false;
   viewMode: 'preview' | 'edit' | 'split' = 'preview';
   
-  // Search functionality
-  showSearch: boolean = false;
-  searchQuery: string = '';
-  currentMatch: number = 0;
-  totalMatches: number = 0;
   
   // Save dropdown functionality
   showSaveDropdown: boolean = false;
 
+  // Search state management
+  searchState: SearchState = {
+    query: '',
+    isActive: false,
+    results: [],
+    currentIndex: 0,
+    totalMatches: 0,
+    searchMode: SearchMode.PREVIEW
+  };
+
+  // Subscriptions for cleanup
+  private searchSubscription!: Subscription;
+
   constructor(
     private electronService: ElectronService,
     private fileService: FileService,
-    private themeService: ThemeService
+    private themeService: ThemeService,
+    private scrollSyncService: ScrollSyncService,
+    private searchService: SearchService
   ) {}
 
   ngOnInit() {
     this.loadWorkspaceSettings();
     // Ensure theme is properly applied on component initialization
     this.themeService.setTheme(this.themeService.getCurrentTheme());
+    
+    // Subscribe to search state changes
+    this.searchSubscription = this.searchService.searchState.subscribe(state => {
+      this.searchState = state;
+      // Apply highlighting when state changes (but don't trigger new search)
+      this.applySearchHighlighting();
+    });
+    
+    // Set initial search mode based on current view mode
+    this.updateSearchMode();
   }
 
   ngAfterViewInit() {
-    this.setupScrollListeners();
+    // Setup scroll sync for split mode if components are available
+    this.setupScrollSync();
   }
 
-  private setupScrollListeners() {
-    // Set up direct scroll listeners on actual scrollable elements
-    setTimeout(() => {
-      const editorTextarea = document.querySelector('.editor textarea') as HTMLElement;
-      const previewContent = document.querySelector('.preview .preview-content') as HTMLElement;
-      
-      if (editorTextarea) {
-        editorTextarea.addEventListener('scroll', (e) => this.handleDirectScroll(e, 'editor'));
-      }
-      
-      if (previewContent) {
-        previewContent.addEventListener('scroll', (e) => this.handleDirectScroll(e, 'preview'));
-      }
-    }, 100);
+  /**
+   * Setup scroll synchronization using the new ScrollSyncService
+   * CRITICAL: This ensures both editor and preview scroll together in split mode
+   */
+  private setupScrollSync() {
+    if (this.viewMode === 'split' && this.editorContainer && this.previewContainer) {
+      console.log('Setting up scroll sync for split mode');
+      this.scrollSyncService.setupSync(this.editorContainer, this.previewContainer);
+    }
   }
 
-  private handleDirectScroll(event: Event, sourceType: 'editor' | 'preview') {
-    if (this.viewMode !== 'split') return;
+  /**
+   * Update search mode based on current view mode
+   */
+  private updateSearchMode() {
+    let searchMode: SearchMode;
     
-    const sourceElement = event.target as HTMLElement;
-    let targetElement: HTMLElement | null = null;
-    
-    if (sourceType === 'editor') {
-      targetElement = document.querySelector('.preview .preview-content') as HTMLElement;
-    } else {
-      targetElement = document.querySelector('.editor textarea') as HTMLElement;
+    switch (this.viewMode) {
+      case 'edit':
+        searchMode = SearchMode.EDITOR;
+        break;
+      case 'preview':
+        searchMode = SearchMode.PREVIEW;
+        break;
+      case 'split':
+        searchMode = SearchMode.SPLIT;
+        break;
+      default:
+        searchMode = SearchMode.PREVIEW;
     }
     
-    if (!targetElement || !sourceElement) return;
-    
-    // Calculate scroll percentage
-    const maxScrollTop = Math.max(1, sourceElement.scrollHeight - sourceElement.clientHeight);
-    const scrollPercentage = sourceElement.scrollTop / maxScrollTop;
-    
-    // Apply to target
-    const targetMaxScrollTop = Math.max(0, targetElement.scrollHeight - targetElement.clientHeight);
-    const targetScrollTop = scrollPercentage * targetMaxScrollTop;
-    
-    // Temporarily disable the target's scroll listener to prevent loops
-    targetElement.style.pointerEvents = 'none';
-    targetElement.scrollTop = targetScrollTop;
-    
-    setTimeout(() => {
-      if (targetElement) {
-        targetElement.style.pointerEvents = '';
-      }
-    }, 10);
+    this.searchService.setSearchMode(searchMode);
   }
 
   toggleExplorer() {
@@ -113,9 +127,16 @@ export class AppComponent implements OnInit, AfterViewInit {
     }
     this.saveWorkspaceSettings();
     
-    // Re-setup scroll listeners when switching to split mode
+    // Update search mode when view changes
+    this.updateSearchMode();
+    
+    // Setup scroll sync when switching to split mode
     if (this.viewMode === 'split') {
-      setTimeout(() => this.setupScrollListeners(), 100);
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => this.setupScrollSync(), 100);
+    } else {
+      // Cleanup scroll sync when leaving split mode
+      this.scrollSyncService.cleanup();
     }
   }
   get viewModeIcon(): string {
@@ -262,60 +283,6 @@ export class AppComponent implements OnInit, AfterViewInit {
     localStorage.setItem('markdownEditorSettings', JSON.stringify(settings));
   }
 
-  syncScroll(event: Event) {
-    if (this.viewMode !== 'split') return; // Only sync in split mode
-    
-    const target = event.target as HTMLElement;
-    
-    // Determine which panel is scrolling
-    const isEditor = target.closest('.editor') !== null;
-    const isPreview = target.closest('.preview') !== null;
-    
-    if (!isEditor && !isPreview) return;
-    
-    // Get the scrolling element
-    const scrollingElement = target;
-    
-    // Find the other panel to sync to
-    const otherSelector = isEditor ? '.preview' : '.editor';
-    const otherPanelContainer = document.querySelector(otherSelector) as HTMLElement;
-    
-    if (!otherPanelContainer) return;
-    
-    // Find the scrollable element in the other panel
-    let otherScrollableElement: HTMLElement | null = null;
-    
-    if (isEditor) {
-      // For preview panel, find the scrollable content
-      otherScrollableElement = otherPanelContainer.querySelector('.preview-content') as HTMLElement;
-      if (!otherScrollableElement) {
-        otherScrollableElement = otherPanelContainer;
-      }
-    } else {
-      // For editor panel, find the textarea
-      otherScrollableElement = otherPanelContainer.querySelector('textarea') as HTMLElement;
-      if (!otherScrollableElement) {
-        otherScrollableElement = otherPanelContainer;
-      }
-    }
-    
-    if (!otherScrollableElement) return;
-    
-    // Calculate and apply scroll synchronization
-    const scrollPercentage = scrollingElement.scrollTop / Math.max(1, scrollingElement.scrollHeight - scrollingElement.clientHeight);
-    const targetScrollTop = scrollPercentage * Math.max(0, otherScrollableElement.scrollHeight - otherScrollableElement.clientHeight);
-    
-    // Prevent infinite loop by temporarily removing scroll listeners
-    otherScrollableElement.style.pointerEvents = 'none';
-    otherScrollableElement.scrollTop = targetScrollTop;
-    
-    // Re-enable after a short delay
-    setTimeout(() => {
-      if (otherScrollableElement) {
-        otherScrollableElement.style.pointerEvents = '';
-      }
-    }, 10);
-  }
 
   onGlobalClick(event: MouseEvent) {
     // Close dropdown if clicking outside
@@ -362,7 +329,7 @@ export class AppComponent implements OnInit, AfterViewInit {
       }
     }
     // Escape to close search
-    else if (event.key === 'Escape' && this.showSearch) {
+    else if (event.key === 'Escape' && this.searchState.isActive) {
       this.closeSearch();
     }
   }
@@ -387,32 +354,46 @@ export class AppComponent implements OnInit, AfterViewInit {
     }
   }
 
-  onSearchQueryChange() {
-    this.performSearch();
-  }
-
-  toggleSearch() {
-    if (this.showSearch) {
-      this.closeSearch();
+  /**
+   * Handle search query changes - now uses SearchService
+   */
+  onSearchQueryChange(query: string) {
+    this.searchService.updateSearchQuery(query);
+    
+    // Perform search immediately for this query
+    if (query.trim()) {
+      this.performSearch();
     } else {
-      this.openSearch();
+      // Clear search if query is empty
+      this.applySearchHighlighting();
     }
   }
 
+  /**
+   * Toggle search visibility - now uses SearchService
+   */
+  toggleSearch() {
+    this.searchService.toggleSearch();
+  }
+
+  /**
+   * Open search - now uses SearchService
+   */
   openSearch() {
-    this.showSearch = true;
-    setTimeout(() => {
+    this.searchService.openSearch();
+    // Use requestAnimationFrame instead of setTimeout to avoid zone.js issues
+    requestAnimationFrame(() => {
       if (this.searchInputElement) {
         this.searchInputElement.nativeElement.focus();
       }
-    }, 100);
+    });
   }
 
+  /**
+   * Close search - now uses SearchService
+   */
   closeSearch() {
-    this.showSearch = false;
-    this.searchQuery = '';
-    this.currentMatch = 0;
-    this.totalMatches = 0;
+    this.searchService.closeSearch();
     
     // Clear search in child components
     if (this.markdownEditor) {
@@ -423,59 +404,123 @@ export class AppComponent implements OnInit, AfterViewInit {
     }
   }
 
+  /**
+   * Perform search using SearchService - handles all modes
+   */
   performSearch() {
-    this.currentMatch = 0;
-    this.totalMatches = 0;
-
-    if (!this.searchQuery || !this.currentFileContent) {
+    if (!this.currentFileContent) {
       return;
     }
 
-    // Delegate search to active components
-    if (this.viewMode === 'edit' && this.markdownEditor) {
-      this.markdownEditor.searchQuery = this.searchQuery;
-      this.markdownEditor.performSearch(); // Don't highlight during typing
-      this.currentMatch = this.markdownEditor.currentMatch;
-      this.totalMatches = this.markdownEditor.totalMatches;
-    } else if (this.viewMode === 'preview' && this.markdownPreview) {
-      this.markdownPreview.searchQuery = this.searchQuery;
-      this.markdownPreview.performSearch();
-      this.currentMatch = this.markdownPreview.currentMatch;
-      this.totalMatches = this.markdownPreview.totalMatches;
-    } else if (this.viewMode === 'split') {
-      // In split mode, search in the editor
+    const targets: SearchTarget[] = [];
+
+    // Create search targets based on current view mode
+    switch (this.searchState.searchMode) {
+      case SearchMode.EDITOR:
+        targets.push({
+          type: 'editor',
+          content: this.currentFileContent
+        });
+        break;
+      
+      case SearchMode.PREVIEW:
+        targets.push({
+          type: 'preview', 
+          content: this.currentFileContent
+        });
+        break;
+      
+      case SearchMode.SPLIT:
+        // CRITICAL: Search in BOTH editor and preview in split mode
+        targets.push({
+          type: 'editor',
+          content: this.currentFileContent
+        });
+        targets.push({
+          type: 'preview',
+          content: this.currentFileContent
+        });
+        break;
+    }
+
+    // Perform search using SearchService
+    this.searchService.performSearch(targets);
+    
+    // Apply highlighting to visible components
+    this.applySearchHighlighting();
+  }
+
+  /**
+   * Apply search highlighting to the appropriate components
+   */
+  private applySearchHighlighting() {
+    const query = this.searchState.query;
+    const results = this.searchState.results;
+    const currentIndex = this.searchState.currentIndex;
+
+    if (!query) {
+      // Clear highlights
       if (this.markdownEditor) {
-        this.markdownEditor.searchQuery = this.searchQuery;
-        this.markdownEditor.performSearch(); // Don't highlight during typing
-        this.currentMatch = this.markdownEditor.currentMatch;
-        this.totalMatches = this.markdownEditor.totalMatches;
+        this.markdownEditor.closeSearch();
       }
+      if (this.markdownPreview) {
+        this.markdownPreview.closeSearch();
+      }
+      return;
+    }
+
+    // Apply highlighting based on current mode
+    switch (this.searchState.searchMode) {
+      case SearchMode.EDITOR:
+        if (this.markdownEditor) {
+          this.markdownEditor.highlightSearchResults(query, results, currentIndex);
+        }
+        break;
+      
+      case SearchMode.PREVIEW:
+        if (this.markdownPreview) {
+          this.markdownPreview.highlightSearchResults(query, results, currentIndex);
+        }
+        break;
+      
+      case SearchMode.SPLIT:
+        // Highlight in both components
+        if (this.markdownEditor) {
+          this.markdownEditor.highlightSearchResults(query, results, currentIndex);
+        }
+        if (this.markdownPreview) {
+          this.markdownPreview.highlightSearchResults(query, results, currentIndex);
+        }
+        break;
     }
   }
 
+  /**
+   * Navigate to next search result - now uses SearchService
+   */
   findNext() {
-    if (this.viewMode === 'edit' && this.markdownEditor) {
-      this.markdownEditor.findNext();
-      this.currentMatch = this.markdownEditor.currentMatch;
-    } else if (this.viewMode === 'preview' && this.markdownPreview) {
-      this.markdownPreview.findNext();
-      this.currentMatch = this.markdownPreview.currentMatch;
-    } else if (this.viewMode === 'split' && this.markdownEditor) {
-      this.markdownEditor.findNext();
-      this.currentMatch = this.markdownEditor.currentMatch;
-    }
+    this.searchService.navigateNext();
+    this.applySearchHighlighting();
   }
 
+  /**
+   * Navigate to previous search result - now uses SearchService
+   */
   findPrevious() {
-    if (this.viewMode === 'edit' && this.markdownEditor) {
-      this.markdownEditor.findPrevious();
-      this.currentMatch = this.markdownEditor.currentMatch;
-    } else if (this.viewMode === 'preview' && this.markdownPreview) {
-      this.markdownPreview.findPrevious();
-      this.currentMatch = this.markdownPreview.currentMatch;
-    } else if (this.viewMode === 'split' && this.markdownEditor) {
-      this.markdownEditor.findPrevious();
-      this.currentMatch = this.markdownEditor.currentMatch;
+    this.searchService.navigatePrevious();
+    this.applySearchHighlighting();
+  }
+
+  /**
+   * Cleanup when component is destroyed
+   */
+  ngOnDestroy() {
+    // Cleanup scroll sync
+    this.scrollSyncService.cleanup();
+    
+    // Cleanup subscriptions
+    if (this.searchSubscription) {
+      this.searchSubscription.unsubscribe();
     }
   }
 }
