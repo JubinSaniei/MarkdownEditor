@@ -2,9 +2,9 @@
 
 A modern, feature-rich desktop markdown editor built with Angular and Electron. Provides a professional editing experience with multiple view modes, advanced search capabilities, and beautiful theming.
 
-![Markdown Editor](logo.png)
+![Markdown Editor](src/assets/demo.gif)
 
-*Professional markdown editing with VS Code-inspired dark theme and powerful search capabilities*
+*Professional markdown editing with VS Code-inspired dark theme*
 
 ## ✨ Features
 
