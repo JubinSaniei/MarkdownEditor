@@ -373,7 +373,18 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
    * Toggle search visibility - now uses SearchService
    */
   toggleSearch() {
+    const wasActive = this.searchState.isActive;
     this.searchService.toggleSearch();
+    
+    // If search was just opened (was inactive, now active), focus the input
+    if (!wasActive && this.searchState.isActive) {
+      requestAnimationFrame(() => {
+        if (this.searchInputElement) {
+          this.searchInputElement.nativeElement.focus();
+          this.searchInputElement.nativeElement.select(); // Select any existing text
+        }
+      });
+    }
   }
 
   /**
