@@ -92,6 +92,28 @@ npm run build
 ```bash
 npm run dist
 ```
+This runs the Angular production build and then `electron-builder` to create desktop distribution artifacts.
+
+#### Alternative: Directly Run electron-builder
+If you've already built the Angular app ( `npm run build` ) you can invoke the packager directly:
+```bash
+npx electron-builder --publish=never
+```
+You can also build only for your current platform/arch (auto-detected) or specify targets, for example:
+```bash
+npx electron-builder --win portable
+```
+
+#### Output Artifacts
+Build outputs are written to the `dist-electron/` directory (configured in `package.json > build.directories.output`). After a successful Windows build you'll typically see:
+- `MarkdownEditor-Setup.exe` (NSIS installer)
+- `MarkdownEditor-Portable.exe` (portable no-install version)
+- `win-unpacked/` (unzipped unpacked app directory useful for debugging)
+- Supporting metadata files (e.g. `*.blockmap`, config yaml) depending on target
+
+Run the app by either launching the portable executable directly or installing via the setup installer. During development you can continue to use `npm run electron-dev` for a live-reload experience.
+
+To adjust targets (e.g., add macOS dmg, Linux AppImage) edit the `build` section in `package.json`.
 
 ## 🎯 Usage
 
