@@ -93,27 +93,6 @@ npm run build
 npm run dist
 ```
 
-## 📁 Project Structure
-
-```
-src/
-├── app/
-│   ├── components/
-│   │   ├── file-explorer/          # 📁 File-based workspace with folder grouping
-│   │   ├── markdown-editor/        # ✎ Code editor with search & highlighting  
-│   │   └── markdown-preview/       # 👁 Live preview with search support
-│   ├── services/
-│   │   ├── electron.service.ts     # 🔌 Electron IPC communication
-│   │   ├── file.service.ts         # 📄 File operations & workspace management
-│   │   └── theme.service.ts        # 🎨 Centralized theme management & persistence
-│   └── app.component.*             # 🏠 Main application component
-├── styles.scss                     # 🎨 Global styles & design system
-public/
-├── electron.js                     # ⚡ Electron main process
-└── preload.js                      # 🔒 Electron security preload
-logo.png                            # 🖼️ Application icon
-```
-
 ## 🎯 Usage
 
 ### Getting Started
