@@ -27,18 +27,25 @@
   background: transparent;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow: hidden;
+  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   pointer-events: none;
   z-index: 1;
+  border: none;
+  margin: 0;
+  box-sizing: border-box;
   
   .search-highlight {
-    background-color: var(--warning-500);
+    background-color: rgba(255, 235, 59, 0.6);
     color: transparent;
-    border-radius: var(--radius-sm);
+    border-radius: 2px;
+    padding: 0;
+    margin: 0;
     
     &.current {
-      background-color: var(--primary-500);
-      box-shadow: 0 0 0 2px var(--primary-200);
+      background-color: rgba(255, 152, 0, 0.8);
+      box-shadow: 0 0 0 1px #ff5722;
     }
   }
 }
@@ -116,6 +123,13 @@
   color: var(--text-primary);
   transition: all var(--transition-fast);
   z-index: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  margin: 0;
 }
 
 .markdown-editor {
@@ -125,7 +139,9 @@
   }
   
   &.search-active {
-    background: var(--surface-overlay);
+    background: transparent !important;
+    color: var(--text-primary) !important;
+    caret-color: var(--text-primary) !important;
   }
   
   &:focus {
@@ -133,7 +149,9 @@
     box-shadow: inset 0 0 0 1px var(--primary-200);
     
     &.search-active {
-      background: var(--surface-overlay);
+      background: transparent !important;
+      color: var(--text-primary) !important;
+      box-shadow: none !important;
     }
   }
 }

@@ -444,10 +444,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     // Perform search using SearchService
+    // The highlighting will be applied automatically when the search state updates
     this.searchService.performSearch(targets);
-    
-    // Apply highlighting to visible components
-    this.applySearchHighlighting();
   }
 
   /**
@@ -500,7 +498,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   findNext() {
     this.searchService.navigateNext();
-    this.applySearchHighlighting();
+    // Highlighting will be applied automatically when state updates
   }
 
   /**
@@ -508,7 +506,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   findPrevious() {
     this.searchService.navigatePrevious();
-    this.applySearchHighlighting();
+    // Highlighting will be applied automatically when state updates
   }
 
   /**

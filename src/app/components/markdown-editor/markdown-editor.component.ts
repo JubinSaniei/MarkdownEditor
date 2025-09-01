@@ -22,6 +22,10 @@ export class MarkdownEditorComponent implements AfterViewInit {
           this.highlightBackdrop.nativeElement.scrollLeft = this.editorElement.nativeElement.scrollLeft;
         }
       });
+      
+      // Ensure both elements have the same initial scroll position
+      this.highlightBackdrop.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
+      this.highlightBackdrop.nativeElement.scrollLeft = this.editorElement.nativeElement.scrollLeft;
     }
   }
 
@@ -42,8 +46,8 @@ export class MarkdownEditorComponent implements AfterViewInit {
 
     this.updateBackdropHighlights(query, results, currentIndex);
     
-    // Scroll to current result if exists
-    if (currentIndex > 0 && results[currentIndex - 1]) {
+    // Scroll to current result if exists and currentIndex is valid
+    if (currentIndex > 0 && currentIndex <= results.length && results[currentIndex - 1]) {
       this.scrollToResult(results[currentIndex - 1]);
     }
   }
@@ -60,7 +64,9 @@ export class MarkdownEditorComponent implements AfterViewInit {
   }
 
   private updateBackdropHighlights(query: string, results: any[], currentIndex: number) {
-    if (!this.highlightBackdrop || !this.editorElement) return;
+    if (!this.highlightBackdrop || !this.editorElement) {
+      return;
+    }
 
     const textarea = this.editorElement.nativeElement;
     const backdrop = this.highlightBackdrop.nativeElement;
@@ -76,6 +82,10 @@ export class MarkdownEditorComponent implements AfterViewInit {
       backdrop.innerHTML = '';
       return;
     }
+
+    // Sync scroll position immediately
+    backdrop.scrollTop = textarea.scrollTop;
+    backdrop.scrollLeft = textarea.scrollLeft;
 
     // Create highlighted text for backdrop
     let highlightedText = this.content;
@@ -94,6 +104,12 @@ export class MarkdownEditorComponent implements AfterViewInit {
     });
 
     backdrop.innerHTML = highlightedText;
+    
+    // Ensure scroll position stays synced after DOM update
+    requestAnimationFrame(() => {
+      backdrop.scrollTop = textarea.scrollTop;
+      backdrop.scrollLeft = textarea.scrollLeft;
+    });
   }
 
   private scrollToResult(result: any) {
