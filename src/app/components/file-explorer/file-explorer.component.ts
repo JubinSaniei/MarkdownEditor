@@ -1,375 +1,496 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges, OnDestroy, HostListener } from '@angular/core';
-import { FileService } from '../../services/file.service';
+import {
+  Component, Input, Output, EventEmitter, OnChanges, SimpleChanges,
+  OnDestroy, HostListener, ElementRef, ChangeDetectorRef, NgZone
+} from '@angular/core';
 import { ElectronService } from '../../services/electron.service';
 
-export interface WorkspaceFile {
+export interface FileTreeNode {
   name: string;
   path: string;
-  lastModified?: Date;
-}
-
-export interface FolderGroup {
-  folderName: string;      // Just the folder name (e.g., "Documents")
-  folderPath: string;      // Full folder path (e.g., "/Users/john/Documents")
-  files: WorkspaceFile[];
+  isDirectory: boolean;
+  children: FileTreeNode[] | null; // null = not yet loaded
   expanded: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  pendingNew: { type: 'file' | 'folder'; name: string } | null;
+  loading: boolean;
 }
 
-/**
- * Simple file-only workspace manager component:
- * - Add individual .md files to workspace
- * - Remove files from workspace
- * - Select files from workspace list
- * - Create new files
- * - No folder management - files only
- */
+interface RootEntry {
+  path: string;
+  nodes: FileTreeNode[];
+  expanded: boolean;
+  loading: boolean;
+  pendingNew: { type: 'file' | 'folder'; name: string } | null;
+}
+
+interface ContextMenu {
+  visible: boolean;
+  x: number;
+  y: number;
+  node: FileTreeNode | null;
+}
+
 @Component({
   selector: 'app-file-explorer',
   templateUrl: './file-explorer.component.html',
   styleUrls: ['./file-explorer.component.scss'],
   standalone: false
 })
-export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
-  @Input() workspaceFiles: string[] = []; // Array of file paths instead of folder paths
-  @Output() fileSelected = new EventEmitter<string>();
+export class FileExplorerComponent implements OnChanges, OnDestroy {
+  @Input() workspaceRoots: string[] = [];
+  @Input() recentFiles: string[] = [];
   @Output() fileOpened = new EventEmitter<string>();
-  @Output() multipleFilesAdded = new EventEmitter<string[]>();
-  @Output() fileRemoved = new EventEmitter<string>();
-  @Output() newFileCreated = new EventEmitter<{ filePath: string; content: string }>();
-  @Output() fileDeleted = new EventEmitter<string>();
+  @Output() fileDoubleClicked = new EventEmitter<string>();
+  @Output() workspaceOpened = new EventEmitter<string>();
+  @Output() workspaceRemoved = new EventEmitter<string>();
+  @Output() recentFileOpened = new EventEmitter<string>();
 
-  files: WorkspaceFile[] = [];
-  folderGroups: FolderGroup[] = [];
-  public isLoading: boolean = false;
-  public selectedFilePath: string | null = null;
-  private loadTimeout: any;
-  private clickTimeout: any;
+  workspaces: RootEntry[] = [];
+  selectedPath: string | null = null;
+  private clickTimer: any = null;
+  recentExpanded: boolean = true;
+
+  contextMenu: ContextMenu = { visible: false, x: 0, y: 0, node: null };
 
   constructor(
-    private fileService: FileService,
-    private electronService: ElectronService
+    private electronService: ElectronService,
+    private cdr: ChangeDetectorRef,
+    private zone: NgZone,
+    private hostRef: ElementRef
   ) {}
 
-  ngOnInit() {
-    this.loadWorkspaceFiles();
-  }
-
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['workspaceFiles']) {
-      // Debounce the loading to prevent rapid successive calls
-      if (this.loadTimeout) {
-        clearTimeout(this.loadTimeout);
-      }
-      this.loadTimeout = setTimeout(() => {
-        this.loadWorkspaceFiles();
-      }, 100);
-    }
-  }
-
-  /**
-   * Opens file dialog to select markdown files and adds them to workspace
-   * Supports both single and multiple file selection
-   */
-  async addMultipleFiles() {
-    const results = await this.electronService.selectMultipleFiles();
-    if (results && results.length > 0) {
-      const validFiles = results.filter(filePath => this.fileService.isValidMarkdownPath(filePath));
-      
-      // Emit all valid files at once for efficient processing
-      if (validFiles.length > 0) {
-        this.multipleFilesAdded.emit(validFiles);
-      }
-
-      // Show warning for invalid files
-      const invalidFiles = results.filter(filePath => !this.fileService.isValidMarkdownPath(filePath));
-      if (invalidFiles.length > 0) {
-        console.warn('Some selected files are not markdown files:', invalidFiles);
+    if (changes['workspaceRoots']) {
+      const newRoots: string[] = this.workspaceRoots || [];
+      // Remove workspaces no longer in the list
+      this.workspaces = this.workspaces.filter(ws => newRoots.includes(ws.path));
+      // Add workspaces that are new
+      for (const rootPath of newRoots) {
+        if (!this.workspaces.find(ws => ws.path === rootPath)) {
+          const ws: RootEntry = { path: rootPath, nodes: [], expanded: true, loading: false, pendingNew: null };
+          this.workspaces.push(ws);
+          this.loadWorkspace(ws);
+        }
       }
     }
   }
 
-  /**
-   * Creates a new markdown file and adds it to workspace
-   */
-  async createNewFile() {
-    const result = await this.fileService.createNewFile();
-    
-    if (result.success && result.filePath && result.content !== undefined) {
-      // Emit events for the new file
-      this.newFileCreated.emit({ filePath: result.filePath, content: result.content });
-      this.multipleFilesAdded.emit([result.filePath]);
-    } else if (result.error && !result.cancelled) {
-      console.error('Failed to create new file:', result.error);
-    }
+  ngOnDestroy() {
+    document.removeEventListener('click', this.closeContextMenuBound);
+    if (this.clickTimer) clearTimeout(this.clickTimer);
   }
 
-  /**
-   * Removes a file from workspace (does not delete the actual file)
-   */
-  removeFileFromWorkspace(filePath: string, event: Event) {
-    event.stopPropagation();
-    this.fileRemoved.emit(filePath);
+  // ── Tree Loading ─────────────────────────────────────────────
+
+  async loadWorkspace(ws: RootEntry) {
+    ws.loading = true;
+    try {
+      const contents = await this.electronService.getDirectoryContents(ws.path);
+      ws.nodes = this.buildNodes(contents);
+    } catch (_) {
+      ws.nodes = [];
+    }
+    ws.loading = false;
   }
 
-  /**
-   * Deletes the actual file from disk and removes it from workspace
-   */
-  async deleteFile(filePath: string, event: Event) {
-    event.stopPropagation();
-    
-    const result = await this.fileService.deleteFile(filePath);
-    
-    if (result.success) {
-      this.fileDeleted.emit(filePath);
-      this.fileRemoved.emit(filePath); // Also remove from workspace
-      this.refreshWorkspace();
-    } else if (result.error && !result.cancelled) {
-      console.error('Failed to delete file:', result.error);
-    }
+  private buildNodes(items: any[]): FileTreeNode[] {
+    return items
+      .filter(item => item.isDirectory || this.isMarkdown(item.name))
+      .map(item => ({
+        name: item.name,
+        path: item.path,
+        isDirectory: item.isDirectory,
+        children: item.isDirectory ? null : undefined as any,
+        expanded: false,
+        isRenaming: false,
+        renameValue: '',
+        pendingNew: null,
+        loading: false
+      }));
   }
 
-  /**
-   * Refreshes the workspace file list
-   */
-  refreshWorkspace(): void {
-    // Clear any pending timeout
-    if (this.loadTimeout) {
-      clearTimeout(this.loadTimeout);
-    }
-    
-    // Store current selection
-    const selectedPath = this.selectedFilePath;
-    
-    // Reload files
-    this.loadWorkspaceFiles().then(() => {
-      // Restore selection if file still exists
-      if (selectedPath && this.files.some(f => f.path === selectedPath)) {
-        this.selectedFilePath = selectedPath;
-      } else {
-        this.selectedFilePath = null;
+  async toggleNode(node: FileTreeNode) {
+    if (!node.isDirectory) return;
+    if (!node.expanded && node.children === null) {
+      node.loading = true;
+      try {
+        const contents = await this.electronService.getDirectoryContents(node.path);
+        node.children = this.buildNodes(contents);
+      } catch (_) {
+        node.children = [];
       }
-    });
+      node.loading = false;
+    }
+    node.expanded = !node.expanded;
   }
 
-  /**
-   * Loads workspace files and gets their metadata
-   */
-  private async loadWorkspaceFiles(): Promise<void> {
-    if (this.isLoading) return;
-    this.isLoading = true;
+  async refreshNode(node: FileTreeNode) {
+    if (!node.isDirectory) return;
+    try {
+      const contents = await this.electronService.getDirectoryContents(node.path);
+      node.children = this.buildNodes(contents);
+    } catch (_) {}
+  }
 
-    this.files = [];
+  // ── Workspace Management ─────────────────────────────────────
 
-    if (!this.workspaceFiles || this.workspaceFiles.length === 0) {
-      this.isLoading = false;
-      this.selectedFilePath = null;
+  async openFolder() {
+    const folderPath = await this.electronService.selectFolder();
+    if (folderPath) {
+      this.workspaceOpened.emit(folderPath);
+    }
+  }
+
+  removeWorkspace(ws: RootEntry) {
+    this.workspaceRemoved.emit(ws.path);
+  }
+
+  // ── Open File ────────────────────────────────────────────────
+
+  openFile(node: FileTreeNode) {
+    if (node.isDirectory) {
+      this.toggleNode(node);
       return;
     }
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+      return; // double-click will handle it via openFileNewTab
+    }
+    this.clickTimer = setTimeout(() => {
+      this.clickTimer = null;
+      this.selectedPath = node.path;
+      this.fileOpened.emit(node.path);
+    }, 350);
+  }
 
-    // Process each file in workspace
-    for (const filePath of this.workspaceFiles) {
-      try {
-        // Verify file still exists and get basic info
-        const fileName = filePath.split(/[/\\]/).pop() || filePath;
-        
-        // Only include markdown files
-        if (this.fileService.isValidMarkdownPath(filePath)) {
-          this.files.push({
-            name: fileName,
-            path: filePath
-          });
-        }
-      } catch (error) {
-        console.warn(`Could not access workspace file: ${filePath}`, error);
+  openFileNewTab(node: FileTreeNode) {
+    if (node.isDirectory) return;
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+    this.selectedPath = node.path;
+    this.fileDoubleClicked.emit(node.path);
+  }
+
+  openRecentFile(filePath: string) {
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+      return; // double-click will handle it via openRecentFileNewTab
+    }
+    this.clickTimer = setTimeout(() => {
+      this.clickTimer = null;
+      this.selectedPath = filePath;
+      this.recentFileOpened.emit(filePath);
+    }, 350);
+  }
+
+  openRecentFileNewTab(filePath: string) {
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+    this.selectedPath = filePath;
+    this.fileDoubleClicked.emit(filePath);
+  }
+
+  // ── Rename ───────────────────────────────────────────────────
+
+  startRename(node: FileTreeNode) {
+    node.isRenaming = true;
+    node.renameValue = node.name;
+    this.closeContextMenu();
+    setTimeout(() => {
+      const input = this.hostRef.nativeElement.querySelector('.rename-input');
+      if (input) { input.focus(); input.select(); }
+    }, 50);
+  }
+
+  async applyRename(node: FileTreeNode) {
+    const newName = node.renameValue.trim();
+    if (!newName || newName === node.name) {
+      node.isRenaming = false;
+      return;
+    }
+    const dir = node.path.replace(/[/\\][^/\\]+$/, '');
+    const sep = node.path.includes('\\') ? '\\' : '/';
+    const newPath = dir + sep + newName;
+
+    const result = await this.electronService.renamePath(node.path, newPath);
+    if (result.success) {
+      if (!node.isDirectory && this.selectedPath === node.path) {
+        this.selectedPath = newPath;
+        this.fileOpened.emit(newPath);
+      }
+      node.path = newPath;
+      node.name = newName;
+    }
+    node.isRenaming = false;
+  }
+
+  cancelRename(node: FileTreeNode) {
+    node.isRenaming = false;
+  }
+
+  onRenameKeyDown(event: KeyboardEvent, node: FileTreeNode) {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.applyRename(node); }
+    if (event.key === 'Escape') { this.cancelRename(node); }
+  }
+
+  // ── Create File / Folder inside a node ───────────────────────
+
+  startNewFile(parentNode: FileTreeNode | null) {
+    if (!parentNode) return;
+    if (!parentNode.expanded) parentNode.expanded = true;
+    if (parentNode.children === null) parentNode.children = [];
+    parentNode.pendingNew = { type: 'file', name: '' };
+    this.closeContextMenu();
+    setTimeout(() => {
+      const input = this.hostRef.nativeElement.querySelector('.new-item-input');
+      if (input) input.focus();
+    }, 50);
+  }
+
+  startNewFolder(parentNode: FileTreeNode | null) {
+    if (!parentNode) return;
+    if (!parentNode.expanded) parentNode.expanded = true;
+    if (parentNode.children === null) parentNode.children = [];
+    parentNode.pendingNew = { type: 'folder', name: '' };
+    this.closeContextMenu();
+    setTimeout(() => {
+      const input = this.hostRef.nativeElement.querySelector('.new-item-input');
+      if (input) input.focus();
+    }, 50);
+  }
+
+  async confirmNewItem(parentNode: FileTreeNode) {
+    if (!parentNode.pendingNew) return;
+    const rawName = parentNode.pendingNew.name.trim();
+    if (!rawName) {
+      parentNode.pendingNew = null;
+      return;
+    }
+    const sep = parentNode.path.includes('\\') ? '\\' : '/';
+    const newPath = parentNode.path + sep + rawName;
+
+    let result: any;
+    if (parentNode.pendingNew.type === 'file') {
+      const defaultContent = rawName.endsWith('.md') ? '# ' + rawName.replace(/\.md$/, '') + '\n\n' : '';
+      result = await this.electronService.createFileAtPath(newPath, defaultContent);
+    } else {
+      result = await this.electronService.createFolderAtPath(newPath);
+    }
+    parentNode.pendingNew = null;
+
+    if (result.success) {
+      await this.refreshNode(parentNode);
+      if (result.filePath) {
+        this.selectedPath = result.filePath;
+        this.fileOpened.emit(result.filePath);
       }
     }
-
-    // Sort files alphabetically
-    this.files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
-    // Group files by parent directory
-    this.groupFilesByFolder();
-
-    this.isLoading = false;
   }
 
-  /**
-   * Groups files by their parent directories
-   */
-  private groupFilesByFolder(): void {
-    const folderMap = new Map<string, FolderGroup>();
+  cancelNewItem(parentNode: FileTreeNode) {
+    parentNode.pendingNew = null;
+  }
 
-    // Group files by parent directory
-    for (const file of this.files) {
-      const folderPath = this.getParentDirectory(file.path);
-      const folderName = this.getFolderName(folderPath);
+  onNewItemKeyDown(event: KeyboardEvent, parentNode: FileTreeNode) {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.confirmNewItem(parentNode); }
+    if (event.key === 'Escape') { this.cancelNewItem(parentNode); }
+  }
 
-      if (!folderMap.has(folderPath)) {
-        folderMap.set(folderPath, {
-          folderName: folderName,
-          folderPath: folderPath,
-          files: [],
-          expanded: false // Start collapsed by default
-        });
+  // ── Create at workspace root ──────────────────────────────────
+
+  startNewFileAtRoot() {
+    // When a single workspace is open the header buttons target it directly.
+    // With multiple workspaces users use the per-workspace buttons.
+    if (this.workspaces.length === 1) this.startNewFileInWorkspace(this.workspaces[0]);
+  }
+
+  startNewFolderAtRoot() {
+    if (this.workspaces.length === 1) this.startNewFolderInWorkspace(this.workspaces[0]);
+  }
+
+  startNewFileInWorkspace(ws: RootEntry) {
+    ws.expanded = true;
+    ws.pendingNew = { type: 'file', name: '' };
+    setTimeout(() => {
+      const inputs = this.hostRef.nativeElement.querySelectorAll('.root-new-item-input');
+      // Focus the input that belongs to this workspace (last rendered if multiple)
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }, 50);
+  }
+
+  startNewFolderInWorkspace(ws: RootEntry) {
+    ws.expanded = true;
+    ws.pendingNew = { type: 'folder', name: '' };
+    setTimeout(() => {
+      const inputs = this.hostRef.nativeElement.querySelectorAll('.root-new-item-input');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }, 50);
+  }
+
+  async confirmRootNewItem(ws: RootEntry) {
+    if (!ws.pendingNew) return;
+    const rawName = ws.pendingNew.name.trim();
+    if (!rawName) { ws.pendingNew = null; return; }
+
+    const sep = ws.path.includes('\\') ? '\\' : '/';
+    const newPath = ws.path + sep + rawName;
+
+    if (ws.pendingNew.type === 'file') {
+      const defaultContent = rawName.endsWith('.md') ? '# ' + rawName.replace(/\.md$/, '') + '\n\n' : '';
+      const result = await this.electronService.createFileAtPath(newPath, defaultContent);
+      if (result.success) {
+        await this.loadWorkspace(ws);
+        this.selectedPath = newPath;
+        this.fileOpened.emit(newPath);
       }
-
-      folderMap.get(folderPath)!.files.push(file);
+    } else {
+      const result = await this.electronService.createFolderAtPath(newPath);
+      if (result.success) await this.loadWorkspace(ws);
     }
-
-    // Convert map to array and sort
-    this.folderGroups = Array.from(folderMap.values());
-    
-    // Sort folder groups by folder name
-    this.folderGroups.sort((a, b) => 
-      a.folderName.localeCompare(b.folderName, undefined, { sensitivity: 'base' })
-    );
-
-    // Sort files within each folder
-    this.folderGroups.forEach(group => {
-      group.files.sort((a, b) => 
-        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-      );
-    });
+    ws.pendingNew = null;
   }
 
-  /**
-   * Gets the parent directory path from a file path
-   */
-  private getParentDirectory(filePath: string): string {
-    const parts = filePath.replace(/\\/g, '/').split('/');
-    parts.pop(); // Remove filename
-    return parts.join('/') || '/';
+  cancelRootNewItem(ws: RootEntry) {
+    ws.pendingNew = null;
   }
 
-  /**
-   * Gets just the folder name (last part of path) from a directory path
-   */
-  private getFolderName(folderPath: string): string {
-    if (folderPath === '/' || folderPath === '') return 'Root';
-    
-    const parts = folderPath.replace(/\\/g, '/').split('/').filter(part => part.length > 0);
-    return parts.length > 0 ? parts[parts.length - 1] : 'Root';
+  onRootNewItemKeyDown(event: KeyboardEvent, ws: RootEntry) {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.confirmRootNewItem(ws); }
+    if (event.key === 'Escape') { this.cancelRootNewItem(ws); }
   }
 
-  /**
-   * Toggles the expanded state of a folder group
-   */
-  toggleFolderGroup(group: FolderGroup): void {
-    group.expanded = !group.expanded;
+  // ── Delete ───────────────────────────────────────────────────
+
+  async deleteItem(node: FileTreeNode) {
+    this.closeContextMenu();
+    const result = await this.electronService.deletePath(node.path);
+    if (result.success) {
+      if (this.selectedPath === node.path) {
+        this.selectedPath = null;
+        this.fileOpened.emit('');
+      }
+      const ws = this.findWorkspaceForNode(node.path);
+      if (ws) await this.loadWorkspace(ws);
+    }
   }
 
-  /**
-   * Handles file selection with single-click behavior
-   */
-  onFileClick(file: WorkspaceFile, event: Event): void {
+  private findWorkspaceForNode(nodePath: string): RootEntry | null {
+    return this.workspaces.find(ws =>
+      nodePath.startsWith(ws.path + '\\') || nodePath.startsWith(ws.path + '/')
+    ) ?? null;
+  }
+
+  // ── Context Menu ─────────────────────────────────────────────
+
+  showContextMenu(event: MouseEvent, node: FileTreeNode) {
     event.preventDefault();
     event.stopPropagation();
-
-    // Single-click to select and open file immediately
-    this.openFile(file);
+    this.contextMenu = { visible: true, x: event.clientX, y: event.clientY, node };
+    document.addEventListener('click', this.closeContextMenuBound);
   }
 
-  /**
-   * Selects a file (visual feedback only)
-   */
-  private selectFile(file: WorkspaceFile): void {
-    this.selectedFilePath = file.path;
-    this.fileSelected.emit(file.path);
+  private closeContextMenuBound = () => this.closeContextMenu();
+
+  closeContextMenu() {
+    this.contextMenu.visible = false;
+    document.removeEventListener('click', this.closeContextMenuBound);
   }
 
-  /**
-   * Opens a file for editing
-   */
-  private openFile(file: WorkspaceFile): void {
-    this.selectedFilePath = file.path;
-    this.fileOpened.emit(file.path);
+  contextNewFile() {
+    if (this.contextMenu.node?.isDirectory) this.startNewFile(this.contextMenu.node);
   }
 
-  /**
-   * Checks if a file is currently selected
-   */
-  isFileSelected(file: WorkspaceFile): boolean {
-    return this.selectedFilePath === file.path;
+  contextNewFolder() {
+    if (this.contextMenu.node?.isDirectory) this.startNewFolder(this.contextMenu.node);
   }
 
-  /**
-   * Clears the current selection
-   */
-  clearSelection(): void {
-    this.selectedFilePath = null;
+  contextRename() {
+    if (this.contextMenu.node) this.startRename(this.contextMenu.node);
   }
 
-  /**
-   * Handles keyboard navigation for files
-   */
-  onFileKeyDown(file: WorkspaceFile, event: KeyboardEvent): void {
-    switch (event.key) {
-      case 'Enter':
-      case ' ': // Space key
-        event.preventDefault();
-        this.openFile(file);
-        break;
-      case 'Delete':
-        event.preventDefault();
-        this.removeFileFromWorkspace(file.path, event);
-        break;
+  contextDelete() {
+    if (this.contextMenu.node) this.deleteItem(this.contextMenu.node);
+  }
+
+  // ── Keyboard in tree ─────────────────────────────────────────
+
+  @HostListener('keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent) {
+    const allNodes = this.workspaces.flatMap(ws => ws.nodes);
+    if (event.key === 'F2' && this.selectedPath) {
+      const node = this.findNodeByPath(allNodes, this.selectedPath);
+      if (node) this.startRename(node);
+    }
+    if (event.key === 'Delete' && this.selectedPath) {
+      const node = this.findNodeByPath(allNodes, this.selectedPath);
+      if (node) this.deleteItem(node);
     }
   }
 
-  /**
-   * Handles keyboard navigation for the file list container
-   */
-  onFileListKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') {
-      this.clearSelection();
-      event.preventDefault();
+  private findNodeByPath(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
+    for (const node of nodes) {
+      if (node.path === targetPath) return node;
+      if (node.isDirectory && node.children) {
+        const found = this.findNodeByPath(node.children, targetPath);
+        if (found) return found;
+      }
     }
+    return null;
   }
 
-  /**
-   * Gets ARIA label for files
-   */
-  getFileAriaLabel(file: WorkspaceFile): string {
-    const selected = this.isFileSelected(file) ? ', selected' : '';
-    return `Markdown file: ${file.name}${selected}`;
+  // ── Display Helpers ──────────────────────────────────────────
+
+  getFileName(filePath: string): string {
+    return filePath.split(/[/\\]/).pop() || filePath;
   }
 
-  /**
-   * Gets a shortened display name for files with long paths
-   */
-  getDisplayName(file: WorkspaceFile): string {
-    return file.name;
-  }
-
-  /**
-   * Gets the directory path for display
-   */
-  getFileDirectory(file: WorkspaceFile): string {
-    const parts = file.path.replace(/\\/g, '/').split('/');
-    parts.pop(); // Remove filename
+  getFileDir(filePath: string): string {
+    const parts = filePath.split(/[/\\]/);
+    parts.pop();
     return parts.join('/') || '/';
   }
 
-  /**
-   * Track by function for Angular *ngFor performance - files
-   */
-  trackByPath(index: number, file: WorkspaceFile): string {
-    return file.path;
+  getWorkspaceName(wsPath: string): string {
+    return wsPath.split(/[/\\]/).pop()?.toUpperCase() || 'WORKSPACE';
   }
 
-  /**
-   * Track by function for folder groups
-   */
-  trackByFolderPath(index: number, group: FolderGroup): string {
-    return group.folderPath;
+  isMarkdown(filePath: string): boolean {
+    const lower = filePath.toLowerCase();
+    return lower.endsWith('.md') || lower.endsWith('.markdown');
   }
 
-  ngOnDestroy(): void {
-    if (this.loadTimeout) {
-      clearTimeout(this.loadTimeout);
+  trackByPath(_: number, node: FileTreeNode): string {
+    return node.path;
+  }
+
+  trackByFilePath(_: number, filePath: string): string {
+    return filePath;
+  }
+
+  trackByWorkspacePath(_: number, ws: RootEntry): string {
+    return ws.path;
+  }
+
+  collapseAll() {
+    for (const ws of this.workspaces) {
+      this.collapseNodes(ws.nodes);
     }
-    if (this.clickTimeout) {
-      clearTimeout(this.clickTimeout);
+  }
+
+  private collapseNodes(nodes: FileTreeNode[]) {
+    for (const node of nodes) {
+      node.expanded = false;
+      if (node.children) this.collapseNodes(node.children);
     }
   }
 }

@@ -1,14 +1,24 @@
-import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import {
+  Component, OnInit, AfterViewInit, OnDestroy,
+  ViewChild, ElementRef
+} from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ElectronService } from './services/electron.service';
 import { FileService } from './services/file.service';
 import { ThemeService } from './services/theme.service';
 import { ScrollSyncService } from './services/scroll-sync.service';
 import { SearchService } from './services/search.service';
-import { SearchState, SearchMode, SearchTarget } from './interfaces/search.interface';
-import { FileExplorerComponent } from './components/file-explorer/file-explorer.component';
+import { SearchState, SearchMode, SearchTarget, SearchOptions } from './interfaces/search.interface';
 import { MarkdownEditorComponent } from './components/markdown-editor/markdown-editor.component';
 import { MarkdownPreviewComponent } from './components/markdown-preview/markdown-preview.component';
+
+interface EditorTab {
+  id: string;
+  filePath: string | null;
+  content: string;
+  isDirty: boolean;
+  isPreview: boolean; // temporary tab reused by single-click; promoted on dblclick or edit
+}
 
 @Component({
   selector: 'app-root',
@@ -17,27 +27,56 @@ import { MarkdownPreviewComponent } from './components/markdown-preview/markdown
   standalone: false
 })
 export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild(FileExplorerComponent) fileExplorer!: FileExplorerComponent;
   @ViewChild('markdownEditor') markdownEditor!: MarkdownEditorComponent;
   @ViewChild('markdownPreview') markdownPreview!: MarkdownPreviewComponent;
-  @ViewChild('searchInput') searchInputElement!: ElementRef<HTMLInputElement>;
-  
-  // ViewChild references for scroll sync containers
   @ViewChild('markdownEditor', { read: ElementRef }) editorContainer!: ElementRef;
   @ViewChild('markdownPreview', { read: ElementRef }) previewContainer!: ElementRef;
-  
-  title = 'Markdown Editor';
-  currentFilePath: string | null = null;
-  currentFileContent: string = '';
-  workspaceFiles: string[] = [];
-  isExplorerCollapsed: boolean = false;
-  viewMode: 'preview' | 'edit' | 'split' = 'preview';
-  
-  
-  // Save dropdown functionality
-  showSaveDropdown: boolean = false;
+  @ViewChild('searchInput') searchInputElement!: ElementRef<HTMLInputElement>;
+  @ViewChild('replaceInput') replaceInputElement!: ElementRef<HTMLInputElement>;
+  @ViewChild('editorArea') editorAreaRef!: ElementRef;
 
-  // Search state management
+  // ── Workspace ─────────────────────────────────────────────
+  title = 'Markdown Editor';
+  workspaceRoots: string[] = [];
+
+  // ── Tab State ─────────────────────────────────────────────
+  tabs: EditorTab[] = [];
+  activeTabId: string = '';
+
+  get activeTab(): EditorTab | null {
+    return this.tabs.find(t => t.id === this.activeTabId) ?? null;
+  }
+
+  get currentFilePath(): string | null {
+    return this.activeTab?.filePath ?? null;
+  }
+
+  get isDirty(): boolean {
+    return this.activeTab?.isDirty ?? false;
+  }
+
+  get currentFileContent(): string {
+    return this.activeTab?.content ?? '';
+  }
+
+  // ── Recent Files ──────────────────────────────────────────
+  recentFiles: string[] = [];
+  private readonly MAX_RECENT = 5;
+
+  // ── View State ────────────────────────────────────────────
+  isExplorerCollapsed: boolean = false;
+  viewMode: 'preview' | 'edit' | 'split' = 'split';
+
+  // ── Split Resize ──────────────────────────────────────────
+  editorPaneWidth: number = 50;
+  isDraggingSplit: boolean = false;
+  private splitMoveHandler!: (e: MouseEvent) => void;
+  private splitUpHandler!: () => void;
+
+  // ── External Change Warning ───────────────────────────────
+  showExternalChangeWarning: boolean = false;
+
+  // ── Search State ──────────────────────────────────────────
   searchState: SearchState = {
     query: '',
     isActive: false,
@@ -46,8 +85,23 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     totalMatches: 0,
     searchMode: SearchMode.PREVIEW
   };
+  isReplaceVisible: boolean = false;
+  replaceQuery: string = '';
+  searchOptions: SearchOptions = { caseSensitive: false, wholeWord: false, useRegex: false };
 
-  // Subscriptions for cleanup
+  // ── Auto-save ─────────────────────────────────────────────
+  autoSaveEnabled: boolean = false;
+  private autoSaveIntervalMs: number = 30000;
+  private autoSaveTimer: any = null;
+  showAutoSaveIndicator: boolean = false;
+
+  // ── Save Dropdown ─────────────────────────────────────────
+  showSaveDropdown: boolean = false;
+
+  // ── Save Suppression (ignore own-write events from file watcher) ──
+  private readonly saveSuppressionSet = new Set<string>();
+
+  // ── Subscriptions ─────────────────────────────────────────
   private searchSubscription!: Subscription;
 
   constructor(
@@ -59,102 +113,399 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   ) {}
 
   ngOnInit() {
-    this.loadWorkspaceSettings();
-    // Ensure theme is properly applied on component initialization
+    this.loadSettings();
     this.themeService.setTheme(this.themeService.getCurrentTheme());
-    
-    // Subscribe to search state changes
+
     this.searchSubscription = this.searchService.searchState.subscribe(state => {
       this.searchState = state;
-      // Apply highlighting when state changes (but don't trigger new search)
       this.applySearchHighlighting();
     });
-    
-    // Set initial search mode based on current view mode
+
     this.updateSearchMode();
+
+    this.electronService.onFileChanged((changedPath: string) => {
+      if (this.saveSuppressionSet.has(changedPath)) return;
+      if (changedPath === this.currentFilePath) {
+        this.showExternalChangeWarning = true;
+      }
+    });
   }
 
   ngAfterViewInit() {
-    // Setup scroll sync for split mode if components are available
     this.setupScrollSync();
-  }
-
-  /**
-   * Setup scroll synchronization using the new ScrollSyncService
-   * CRITICAL: This ensures both editor and preview scroll together in split mode
-   */
-  private setupScrollSync() {
-    if (this.viewMode === 'split' && this.editorContainer && this.previewContainer) {
-      console.log('Setting up scroll sync for split mode');
-      this.scrollSyncService.setupSync(this.editorContainer, this.previewContainer);
+    const lastFile = localStorage.getItem('lastOpenedFile');
+    if (lastFile) {
+      this.openFileByPath(lastFile);
     }
   }
 
-  /**
-   * Update search mode based on current view mode
-   */
-  private updateSearchMode() {
-    let searchMode: SearchMode;
-    
-    switch (this.viewMode) {
-      case 'edit':
-        searchMode = SearchMode.EDITOR;
-        break;
-      case 'preview':
-        searchMode = SearchMode.PREVIEW;
-        break;
-      case 'split':
-        searchMode = SearchMode.SPLIT;
-        break;
-      default:
-        searchMode = SearchMode.PREVIEW;
+  ngOnDestroy() {
+    this.scrollSyncService.cleanup();
+    if (this.searchSubscription) this.searchSubscription.unsubscribe();
+    this.stopAutoSave();
+    this.electronService.removeFileChangedListener();
+    for (const tab of this.tabs) {
+      if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
     }
-    
-    this.searchService.setSearchMode(searchMode);
+    if (this.isDraggingSplit) {
+      document.removeEventListener('mousemove', this.splitMoveHandler);
+      document.removeEventListener('mouseup', this.splitUpHandler);
+    }
   }
+
+  // ── Dirty State ───────────────────────────────────────────
+
+  private updateDirtyState() {
+    const tab = this.activeTab;
+    const fileName = tab?.filePath
+      ? tab.filePath.split(/[/\\]/).pop() || 'Untitled'
+      : 'Untitled';
+    (window as any).__dirtyState__ = {
+      isDirty: tab?.isDirty ?? false,
+      filePath: tab?.filePath ?? null,
+      content: tab?.content ?? '',
+      fileName
+    };
+  }
+
+  // ── Tab Management ────────────────────────────────────────
+
+  // Double-click: opens a permanent tab (promotes preview if the file is already open)
+  async openFileAsNewTab(filePath: string) {
+    if (!filePath) return;
+    const existing = this.tabs.find(t => t.filePath === filePath);
+    if (existing) {
+      existing.isPreview = false; // promote to permanent
+      this.activateTab(existing.id);
+      return;
+    }
+    try {
+      const content = await this.fileService.readFile(filePath);
+      const tab: EditorTab = {
+        id: Date.now().toString(),
+        filePath,
+        content,
+        isDirty: false,
+        isPreview: false
+      };
+      this.tabs.push(tab);
+      this.activateTab(tab.id);
+      this.addToRecentFiles(filePath);
+      localStorage.setItem('lastOpenedFile', filePath);
+      await this.electronService.watchFile(filePath);
+    } catch (_) {
+      localStorage.removeItem('lastOpenedFile');
+    }
+  }
+
+  activateTab(tabId: string) {
+    this.activeTabId = tabId;
+    this.showExternalChangeWarning = false;
+    if (this.searchState.isActive) this.closeSearch();
+    this.updateDirtyState();
+    this.saveSettings();
+    setTimeout(() => {
+      this.markdownEditor?.scrollToTop();
+      this.markdownPreview?.scrollToTop();
+    }, 0);
+  }
+
+  closeTab(tab: EditorTab, event?: MouseEvent) {
+    if (event) event.stopPropagation();
+    if (tab.isDirty) {
+      const confirmed = confirm(`"${this.getTabDisplayName(tab)}" has unsaved changes. Close anyway?`);
+      if (!confirmed) return;
+    }
+    if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
+    const idx = this.tabs.indexOf(tab);
+    this.tabs.splice(idx, 1);
+    if (this.activeTabId === tab.id) {
+      if (this.tabs.length > 0) {
+        const newIdx = Math.min(idx, this.tabs.length - 1);
+        this.activateTab(this.tabs[newIdx].id);
+      } else {
+        this.activeTabId = '';
+        this.saveSettings();
+      }
+    } else {
+      this.saveSettings();
+    }
+  }
+
+  getTabDisplayName(tab: EditorTab): string {
+    return tab.filePath ? this.getFileName(tab.filePath) : 'Untitled';
+  }
+
+  promoteTab(tab: EditorTab) {
+    tab.isPreview = false;
+  }
+
+  // ── New File ──────────────────────────────────────────────
+
+  newFile() {
+    const tab: EditorTab = {
+      id: Date.now().toString(),
+      filePath: null,
+      content: '',
+      isDirty: false,
+      isPreview: false
+    };
+    this.tabs.push(tab);
+    this.activateTab(tab.id);
+  }
+
+  // ── Workspace ─────────────────────────────────────────────
+
+  onWorkspaceOpened(root: string) {
+    if (!this.workspaceRoots.includes(root)) {
+      this.workspaceRoots = [...this.workspaceRoots, root];
+    }
+    this.saveSettings();
+  }
+
+  onWorkspaceRemoved(root: string) {
+    this.workspaceRoots = this.workspaceRoots.filter(r => r !== root);
+    this.saveSettings();
+  }
+
+  // ── File Open ─────────────────────────────────────────────
+
+  // Single-click: reuse the existing preview tab, or open a new preview tab.
+  // If the file is already open in a permanent tab, just activate it.
+  async onFileOpened(filePath: string) {
+    if (!filePath) return;
+
+    // Already open in a permanent tab → just activate
+    const permanent = this.tabs.find(t => t.filePath === filePath && !t.isPreview);
+    if (permanent) {
+      this.activateTab(permanent.id);
+      return;
+    }
+
+    // Already open in the preview tab → just activate (no reload needed)
+    const existingPreview = this.tabs.find(t => t.isPreview);
+    if (existingPreview && existingPreview.filePath === filePath) {
+      this.activateTab(existingPreview.id);
+      return;
+    }
+
+    try {
+      const content = await this.fileService.readFile(filePath);
+
+      if (existingPreview) {
+        // Reuse the existing preview tab with the new file
+        if (existingPreview.filePath) await this.electronService.unwatchFile(existingPreview.filePath);
+        existingPreview.filePath = filePath;
+        existingPreview.content = content;
+        existingPreview.isDirty = false;
+        this.activateTab(existingPreview.id);
+      } else {
+        // No preview tab yet — create one
+        const tab: EditorTab = {
+          id: Date.now().toString(),
+          filePath,
+          content,
+          isDirty: false,
+          isPreview: true
+        };
+        this.tabs.push(tab);
+        this.activateTab(tab.id);
+      }
+
+      this.addToRecentFiles(filePath);
+      localStorage.setItem('lastOpenedFile', filePath);
+      await this.electronService.watchFile(filePath);
+    } catch (_) {}
+  }
+
+  async openFileByPath(filePath: string) {
+    await this.openFileAsNewTab(filePath);
+  }
+
+  onContentChanged(content: string) {
+    const tab = this.activeTab;
+    if (tab) {
+      tab.content = content;
+      tab.isDirty = true;
+      tab.isPreview = false; // editing promotes the tab to permanent
+    }
+    this.updateDirtyState();
+  }
+
+  // ── Save ──────────────────────────────────────────────────
+
+  async saveFile() {
+    const tab = this.activeTab;
+    if (!tab) return;
+    if (!tab.filePath) {
+      await this.saveAsFile();
+      return;
+    }
+    this.suppressFileChange(tab.filePath);
+    const ok = await this.fileService.writeFile(tab.filePath, tab.content);
+    if (ok) {
+      tab.isDirty = false;
+      this.updateDirtyState();
+      this.flashAutoSaveIndicator();
+    }
+  }
+
+  async saveAsFile() {
+    const tab = this.activeTab;
+    if (!tab) return;
+    const result = await this.electronService.saveFileAs(tab.content);
+    if (result.success && result.filePath) {
+      if (tab.filePath) await this.electronService.unwatchFile(tab.filePath);
+      tab.filePath = result.filePath;
+      tab.isDirty = false;
+      this.updateDirtyState();
+      this.addToRecentFiles(result.filePath);
+      localStorage.setItem('lastOpenedFile', result.filePath);
+      await this.electronService.watchFile(result.filePath);
+      this.flashAutoSaveIndicator();
+    }
+  }
+
+  // ── File Watcher ──────────────────────────────────────────
+
+  async reloadCurrentFile() {
+    const tab = this.activeTab;
+    if (!tab?.filePath) return;
+    tab.content = await this.fileService.readFile(tab.filePath);
+    tab.isDirty = false;
+    this.showExternalChangeWarning = false;
+    this.updateDirtyState();
+  }
+
+  dismissExternalChange() {
+    this.showExternalChangeWarning = false;
+  }
+
+  // ── Recent Files ──────────────────────────────────────────
+
+  addToRecentFiles(filePath: string) {
+    this.recentFiles = [filePath, ...this.recentFiles.filter(f => f !== filePath)]
+      .slice(0, this.MAX_RECENT);
+    this.saveSettings();
+  }
+
+  onRecentFileOpened(filePath: string) {
+    this.onFileOpened(filePath);
+  }
+
+  // ── Explorer & View ───────────────────────────────────────
 
   toggleExplorer() {
     this.isExplorerCollapsed = !this.isExplorerCollapsed;
-    this.saveWorkspaceSettings();
+    this.saveSettings();
   }
-  toggleViewMode() {
-    if (this.viewMode === 'preview') {
-      this.viewMode = 'edit';
-    } else if (this.viewMode === 'edit') {
-      this.viewMode = 'split';
-    } else {
-      this.viewMode = 'preview';
-    }
-    this.saveWorkspaceSettings();
-    
-    // Update search mode when view changes
+
+  setViewMode(mode: 'preview' | 'edit' | 'split') {
+    this.viewMode = mode;
+    this.saveSettings();
     this.updateSearchMode();
-    
-    // Setup scroll sync when switching to split mode
-    if (this.viewMode === 'split') {
-      // Use setTimeout to ensure DOM is ready
+    if (mode === 'split') {
       setTimeout(() => this.setupScrollSync(), 100);
     } else {
-      // Cleanup scroll sync when leaving split mode
       this.scrollSyncService.cleanup();
     }
   }
-  get viewModeIcon(): string {
-    switch (this.viewMode) {
-      case 'preview': return '👁';
-      case 'edit': return '✎';
-      case 'split': return '↔';
-      default: return '';
-    }
+
+  // ── Split Resize ──────────────────────────────────────────
+
+  onSplitDividerMouseDown(event: MouseEvent) {
+    event.preventDefault();
+    this.isDraggingSplit = true;
+
+    this.splitMoveHandler = (e: MouseEvent) => {
+      const rect = (this.editorAreaRef.nativeElement as HTMLElement).getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      this.editorPaneWidth = Math.max(15, Math.min(85, pct));
+    };
+
+    this.splitUpHandler = () => {
+      this.isDraggingSplit = false;
+      document.removeEventListener('mousemove', this.splitMoveHandler);
+      document.removeEventListener('mouseup', this.splitUpHandler);
+      this.saveSettings();
+    };
+
+    document.addEventListener('mousemove', this.splitMoveHandler);
+    document.addEventListener('mouseup', this.splitUpHandler);
   }
 
-  get themeIcon(): string {
-    return this.themeService.getCurrentTheme() === 'dark' ? '☀' : '🌙';
+  // ── Theme ─────────────────────────────────────────────────
+
+  get isDarkTheme(): boolean {
+    return this.themeService.getCurrentTheme() === 'dark';
   }
 
   toggleTheme() {
     this.themeService.toggleTheme();
   }
+
+  // ── Auto-save ─────────────────────────────────────────────
+
+  toggleAutoSave() {
+    this.autoSaveEnabled = !this.autoSaveEnabled;
+    this.saveSettings();
+    if (this.autoSaveEnabled) {
+      this.startAutoSave();
+    } else {
+      this.stopAutoSave();
+    }
+  }
+
+  private startAutoSave() {
+    this.stopAutoSave();
+    this.autoSaveTimer = setInterval(async () => {
+      const tab = this.activeTab;
+      if (tab?.isDirty && tab?.filePath) {
+        await this.saveFile();
+      }
+    }, this.autoSaveIntervalMs);
+  }
+
+  private stopAutoSave() {
+    if (this.autoSaveTimer) {
+      clearInterval(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+  }
+
+  private suppressFileChange(filePath: string) {
+    this.saveSuppressionSet.add(filePath);
+    setTimeout(() => this.saveSuppressionSet.delete(filePath), 1000);
+  }
+
+  private flashAutoSaveIndicator() {
+    this.showAutoSaveIndicator = true;
+    setTimeout(() => { this.showAutoSaveIndicator = false; }, 2000);
+  }
+
+  // ── Word Count ────────────────────────────────────────────
+
+  get wordCount(): number {
+    const text = this.currentFileContent.trim();
+    return text ? text.split(/\s+/).length : 0;
+  }
+
+  get charCount(): number {
+    return this.currentFileContent.length;
+  }
+
+  get lineCount(): number {
+    if (!this.currentFileContent) return 0;
+    return this.currentFileContent.split('\n').length;
+  }
+
+  // ── Helper ────────────────────────────────────────────────
+
+  getFileName(filePath: string): string {
+    return filePath.split(/[/\\]/).pop() || filePath;
+  }
+
+  // ── Save Dropdown ─────────────────────────────────────────
 
   toggleSaveDropdown() {
     this.showSaveDropdown = !this.showSaveDropdown;
@@ -164,372 +515,239 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.showSaveDropdown = false;
   }
 
-  onFileSelected(filePath: string) {
-    // File is selected (single-click) - just update current path for visual feedback
-    // Note: This doesn't open the file, just selects it
-    // Opening happens on double-click via onFileOpened
-  }
-
-  onFileOpened(filePath: string) {
-    // File is opened for editing (double-click or Enter key)
-    this.currentFilePath = filePath;
-    this.fileService.readFile(filePath).then((content: string) => {
-      this.currentFileContent = content;
-    });
-  }
-
-  onContentChanged(content: string) {
-    this.currentFileContent = content;
-  }
-
-  onMultipleFilesAdded(filePaths: string[]) {
-    // Add files to workspace efficiently (handles both single and multiple files)
-    const newFiles = filePaths.filter(filePath => !this.workspaceFiles.includes(filePath));
-    
-    if (newFiles.length > 0) {
-      // Add all new files at once to trigger ngOnChanges only once
-      this.workspaceFiles = [...this.workspaceFiles, ...newFiles];
-      this.saveWorkspaceSettings();
-      
-      // Single refresh for all files
-      setTimeout(() => {
-        if (this.fileExplorer) {
-          this.fileExplorer.refreshWorkspace();
-        }
-      }, 50);
-    }
-  }
-
-  onFileRemoved(filePath: string) {
-    const index = this.workspaceFiles.indexOf(filePath);
-    if (index !== -1) {
-      // Create a new array reference to trigger ngOnChanges
-      this.workspaceFiles = this.workspaceFiles.filter(file => file !== filePath);
-      this.saveWorkspaceSettings();
-      
-      // If the removed file is currently open, clear the editor
-      if (this.currentFilePath === filePath) {
-        this.currentFilePath = null;
-        this.currentFileContent = '';
-      }
-      
-      // Refresh the workspace
-      setTimeout(() => {
-        if (this.fileExplorer) {
-          this.fileExplorer.refreshWorkspace();
-        }
-      }, 50);
-    }
-  }
-
-  onNewFileCreated(event: { filePath: string; content: string }) {
-    // Open the newly created file in the editor and add to workspace
-    this.currentFilePath = event.filePath;
-    this.currentFileContent = event.content;
-    
-    // Add to workspace if not already there
-    if (!this.workspaceFiles.includes(event.filePath)) {
-      this.workspaceFiles = [...this.workspaceFiles, event.filePath];
-      this.saveWorkspaceSettings();
-    }
-    
-    // Refresh the workspace
-    setTimeout(() => {
-      if (this.fileExplorer) {
-        this.fileExplorer.refreshWorkspace();
-      }
-    }, 100);
-  }
-
-  onFileDeleted(filePath: string) {
-    // Remove from workspace and clear editor if currently open
-    this.onFileRemoved(filePath);
-  }
-
-  async saveFile() {
-    if (this.currentFilePath) {
-      await this.fileService.writeFile(this.currentFilePath, this.currentFileContent);
-    }
-  }
-
-  async saveAsFile() {
-    await this.fileService.saveFileAs(this.currentFileContent);
-  }
-
-  private loadWorkspaceSettings() {
-    const settings = localStorage.getItem('markdownEditorSettings');
-    if (settings) {
-      const parsed = JSON.parse(settings);
-      // Handle migration from folder-based to file-based workspace
-      if (parsed.workspaceFolders && !parsed.workspaceFiles) {
-        // Migration: clear old folder-based settings
-        this.workspaceFiles = [];
-      } else {
-        // Load file-based workspace, remove duplicates
-        const files = parsed.workspaceFiles || [];
-        this.workspaceFiles = Array.from(new Set(files.filter((f: any) => typeof f === 'string'))) as string[];
-      }
-      this.isExplorerCollapsed = parsed.isExplorerCollapsed || false;
-      this.viewMode = parsed.viewMode || 'preview';
-    }
-  }
-
-  private saveWorkspaceSettings() {
-    const settings = {
-      workspaceFiles: this.workspaceFiles,
-      isExplorerCollapsed: this.isExplorerCollapsed,
-      viewMode: this.viewMode
-    };
-    localStorage.setItem('markdownEditorSettings', JSON.stringify(settings));
-  }
-
-
   onGlobalClick(event: MouseEvent) {
-    // Close dropdown if clicking outside
     const target = event.target as HTMLElement;
-    if (!target.closest('.dropdown')) {
-      this.closeSaveDropdown();
+    if (!target.closest('.dropdown')) this.closeSaveDropdown();
+    if (!target.closest('.search-overlay') && !target.closest('.search-toggle-btn')) {
+      // Don't close search on click in editor area
     }
   }
 
-  // Search functionality
+  // ── Keyboard Shortcuts ────────────────────────────────────
+
   onGlobalKeyDown(event: KeyboardEvent) {
-    // Skip if a search input or text input is currently focused
-    const activeElement = document.activeElement as HTMLElement;
-    if (activeElement && (
-      activeElement.classList.contains('search-input') || 
-      (activeElement as HTMLInputElement).type === 'search' ||
-      activeElement.tagName === 'INPUT' ||
-      activeElement.tagName === 'TEXTAREA'
-    )) {
-      // Only allow Ctrl+F and F3 keys when in input fields
-      if (event.ctrlKey && event.key === 'f') {
-        event.preventDefault();
-        this.toggleSearch();
-        return;
-      } else if (event.key === 'F3') {
-        // Allow F3 search navigation even when in input fields
-      } else {
-        return; // Skip other global shortcuts when in input fields
-      }
+    // Ctrl+S: save (works everywhere including textarea)
+    if (event.ctrlKey && event.key === 's') {
+      event.preventDefault();
+      this.saveFile();
+      return;
     }
 
-    // Ctrl+F to open search
-    if (event.ctrlKey && event.key === 'f') {
+    // Ctrl+N: new file
+    if (event.ctrlKey && event.key === 'n') {
       event.preventDefault();
-      this.toggleSearch();
+      this.newFile();
+      return;
     }
-    // F3 for next, Shift+F3 for previous
-    else if (event.key === 'F3') {
+
+    // Ctrl+W: close active tab (works everywhere)
+    if (event.ctrlKey && event.key === 'w') {
       event.preventDefault();
-      if (event.shiftKey) {
-        this.findPrevious();
-      } else {
-        this.findNext();
-      }
+      if (this.activeTab) this.closeTab(this.activeTab);
+      return;
     }
-    // Escape to close search
-    else if (event.key === 'Escape' && this.searchState.isActive) {
-      this.closeSearch();
+
+    // View mode shortcuts (works everywhere)
+    if (event.ctrlKey && event.key === '1') { event.preventDefault(); this.setViewMode('preview'); return; }
+    if (event.ctrlKey && event.key === '2') { event.preventDefault(); this.setViewMode('edit'); return; }
+    if (event.ctrlKey && event.key === '3') { event.preventDefault(); this.setViewMode('split'); return; }
+
+    const activeEl = document.activeElement as HTMLElement;
+    const isInput = activeEl && (
+      activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA'
+    );
+
+    if (isInput) {
+      if (event.ctrlKey && event.key === 'f') { event.preventDefault(); this.toggleSearch(); return; }
+      if (event.key === 'F3') { event.preventDefault(); event.shiftKey ? this.findPrevious() : this.findNext(); return; }
+      if (event.key === 'Escape' && this.searchState.isActive) { this.closeSearch(); return; }
+      return;
     }
+
+    if (event.ctrlKey && event.key === 'f') { event.preventDefault(); this.toggleSearch(); return; }
+    if (event.key === 'F3') { event.preventDefault(); event.shiftKey ? this.findPrevious() : this.findNext(); return; }
+    if (event.key === 'Escape' && this.searchState.isActive) { this.closeSearch(); return; }
   }
 
   onSearchKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      if (event.shiftKey) {
-        this.findPrevious();
-      } else {
-        this.findNext();
-      }
+      event.shiftKey ? this.findPrevious() : this.findNext();
     } else if (event.key === 'F3') {
       event.preventDefault();
-      if (event.shiftKey) {
-        this.findPrevious();
-      } else {
-        this.findNext();
-      }
+      event.shiftKey ? this.findPrevious() : this.findNext();
+    } else if (event.key === 'Escape') {
+      this.closeSearch();
+    } else if (event.key === 'Tab' && !event.shiftKey && this.isReplaceVisible) {
+      event.preventDefault();
+      this.replaceInputElement?.nativeElement.focus();
+    }
+  }
+
+  onReplaceKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.shiftKey ? this.replaceAll() : this.replaceOne();
     } else if (event.key === 'Escape') {
       this.closeSearch();
     }
   }
 
-  /**
-   * Handle search query changes - now uses SearchService
-   */
+  // ── Search ────────────────────────────────────────────────
+
   onSearchQueryChange(query: string) {
     this.searchService.updateSearchQuery(query);
-    
-    // Perform search immediately for this query
     if (query.trim()) {
       this.performSearch();
     } else {
-      // Clear search if query is empty
       this.applySearchHighlighting();
     }
   }
 
-  /**
-   * Toggle search visibility - now uses SearchService
-   */
   toggleSearch() {
     const wasActive = this.searchState.isActive;
     this.searchService.toggleSearch();
-    
-    // If search was just opened (was inactive, now active), focus the input
-    if (!wasActive && this.searchState.isActive) {
+    if (!wasActive) {
       requestAnimationFrame(() => {
-        if (this.searchInputElement) {
-          this.searchInputElement.nativeElement.focus();
-          this.searchInputElement.nativeElement.select(); // Select any existing text
-        }
+        this.searchInputElement?.nativeElement.focus();
+        this.searchInputElement?.nativeElement.select();
       });
     }
   }
 
-  /**
-   * Open search - now uses SearchService
-   */
   openSearch() {
     this.searchService.openSearch();
-    // Use requestAnimationFrame instead of setTimeout to avoid zone.js issues
-    requestAnimationFrame(() => {
-      if (this.searchInputElement) {
-        this.searchInputElement.nativeElement.focus();
-      }
-    });
+    requestAnimationFrame(() => this.searchInputElement?.nativeElement.focus());
   }
 
-  /**
-   * Close search - now uses SearchService
-   */
   closeSearch() {
     this.searchService.closeSearch();
-    
-    // Clear search in child components
-    if (this.markdownEditor) {
-      this.markdownEditor.closeSearch();
-    }
-    if (this.markdownPreview) {
-      this.markdownPreview.closeSearch();
+    this.isReplaceVisible = false;
+    if (this.markdownEditor) this.markdownEditor.closeSearch();
+    if (this.markdownPreview) this.markdownPreview.closeSearch();
+  }
+
+  toggleReplace() {
+    this.isReplaceVisible = !this.isReplaceVisible;
+    if (this.isReplaceVisible) {
+      requestAnimationFrame(() => this.replaceInputElement?.nativeElement.focus());
     }
   }
 
-  /**
-   * Perform search using SearchService - handles all modes
-   */
   performSearch() {
-    if (!this.currentFileContent) {
-      return;
-    }
-
-    const targets: SearchTarget[] = [];
-
-    // Create search targets based on current view mode
-    switch (this.searchState.searchMode) {
-      case SearchMode.EDITOR:
-        targets.push({
-          type: 'editor',
-          content: this.currentFileContent
-        });
-        break;
-      
-      case SearchMode.PREVIEW:
-        targets.push({
-          type: 'preview', 
-          content: this.currentFileContent
-        });
-        break;
-      
-      case SearchMode.SPLIT:
-        // CRITICAL: Search in BOTH editor and preview in split mode
-        targets.push({
-          type: 'editor',
-          content: this.currentFileContent
-        });
-        targets.push({
-          type: 'preview',
-          content: this.currentFileContent
-        });
-        break;
-    }
-
-    // Perform search using SearchService
-    // The highlighting will be applied automatically when the search state updates
-    this.searchService.performSearch(targets);
+    if (!this.currentFileContent) return;
+    // Always search a single target — the content is identical for both editor
+    // and preview panes. Passing two targets would double the results array,
+    // corrupting the editor backdrop (overlapping span insertions) and
+    // showing the wrong match count in the UI.
+    this.searchService.performSearch([{ type: 'editor', content: this.currentFileContent }]);
   }
 
-  /**
-   * Apply search highlighting to the appropriate components
-   */
+  findNext() { this.searchService.navigateNext(); }
+  findPrevious() { this.searchService.navigatePrevious(); }
+
+  // ── Replace ───────────────────────────────────────────────
+
+  replaceOne() {
+    if (!this.searchState.query || !this.searchState.totalMatches) return;
+    const tab = this.activeTab;
+    if (!tab) return;
+    const newContent = this.searchService.replaceOne(
+      tab.content, this.searchState.currentIndex, this.replaceQuery
+    );
+    tab.content = newContent;
+    tab.isDirty = true;
+    this.updateDirtyState();
+    this.performSearch();
+  }
+
+  replaceAll() {
+    if (!this.searchState.query || !this.searchState.totalMatches) return;
+    const tab = this.activeTab;
+    if (!tab) return;
+    const newContent = this.searchService.replaceAll(tab.content, this.replaceQuery);
+    tab.content = newContent;
+    tab.isDirty = true;
+    this.updateDirtyState();
+    this.performSearch();
+  }
+
+  // ── Search Options ────────────────────────────────────────
+
+  toggleSearchOption(option: 'caseSensitive' | 'wholeWord' | 'useRegex') {
+    this.searchOptions = { ...this.searchOptions, [option]: !this.searchOptions[option] };
+    this.searchService.updateSearchOptions(this.searchOptions);
+    if (this.searchState.query) this.performSearch();
+  }
+
+  // ── Private Search Internals ──────────────────────────────
+
+  private updateSearchMode() {
+    const modeMap: Record<string, SearchMode> = {
+      edit: SearchMode.EDITOR,
+      preview: SearchMode.PREVIEW,
+      split: SearchMode.SPLIT
+    };
+    this.searchService.setSearchMode(modeMap[this.viewMode] || SearchMode.PREVIEW);
+  }
+
+  private setupScrollSync() {
+    if (this.viewMode === 'split' && this.editorContainer && this.previewContainer) {
+      this.scrollSyncService.setupSync(this.editorContainer, this.previewContainer);
+    }
+  }
+
   private applySearchHighlighting() {
-    const query = this.searchState.query;
-    const results = this.searchState.results;
-    const currentIndex = this.searchState.currentIndex;
+    const { query, results, currentIndex, searchMode } = this.searchState;
 
     if (!query) {
-      // Clear highlights
-      if (this.markdownEditor) {
-        this.markdownEditor.closeSearch();
-      }
-      if (this.markdownPreview) {
-        this.markdownPreview.closeSearch();
-      }
+      this.markdownEditor?.closeSearch();
+      this.markdownPreview?.closeSearch();
       return;
     }
 
-    // Apply highlighting based on current mode
-    switch (this.searchState.searchMode) {
-      case SearchMode.EDITOR:
-        if (this.markdownEditor) {
-          this.markdownEditor.highlightSearchResults(query, results, currentIndex);
-        }
-        break;
-      
-      case SearchMode.PREVIEW:
-        if (this.markdownPreview) {
-          this.markdownPreview.highlightSearchResults(query, results, currentIndex);
-        }
-        break;
-      
-      case SearchMode.SPLIT:
-        // Highlight in both components
-        if (this.markdownEditor) {
-          this.markdownEditor.highlightSearchResults(query, results, currentIndex);
-        }
-        if (this.markdownPreview) {
-          this.markdownPreview.highlightSearchResults(query, results, currentIndex);
-        }
-        break;
+    if (searchMode === SearchMode.EDITOR || searchMode === SearchMode.SPLIT) {
+      this.markdownEditor?.highlightSearchResults(query, results, currentIndex);
+    }
+    if (searchMode === SearchMode.PREVIEW || searchMode === SearchMode.SPLIT) {
+      this.markdownPreview?.highlightSearchResults(query, results, currentIndex);
     }
   }
 
-  /**
-   * Navigate to next search result - now uses SearchService
-   */
-  findNext() {
-    this.searchService.navigateNext();
-    // Highlighting will be applied automatically when state updates
+  // ── Settings Persistence ──────────────────────────────────
+
+  private loadSettings() {
+    try {
+      const raw = localStorage.getItem('markdownEditorSettings');
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      // Support both the new array format and the old single-root format
+      this.workspaceRoots = Array.isArray(s.workspaceRoots)
+        ? s.workspaceRoots
+        : (s.workspaceRoot ? [s.workspaceRoot] : []);
+      this.isExplorerCollapsed = s.isExplorerCollapsed || false;
+      this.viewMode = s.viewMode || 'split';
+      this.autoSaveEnabled = s.autoSaveEnabled || false;
+      this.recentFiles = Array.isArray(s.recentFiles) ? s.recentFiles : [];
+      if (typeof s.editorPaneWidth === 'number') {
+        this.editorPaneWidth = Math.max(15, Math.min(85, s.editorPaneWidth));
+      }
+    } catch (_) {}
+
+    if (this.autoSaveEnabled) this.startAutoSave();
   }
 
-  /**
-   * Navigate to previous search result - now uses SearchService
-   */
-  findPrevious() {
-    this.searchService.navigatePrevious();
-    // Highlighting will be applied automatically when state updates
-  }
-
-  /**
-   * Cleanup when component is destroyed
-   */
-  ngOnDestroy() {
-    // Cleanup scroll sync
-    this.scrollSyncService.cleanup();
-    
-    // Cleanup subscriptions
-    if (this.searchSubscription) {
-      this.searchSubscription.unsubscribe();
-    }
+  private saveSettings() {
+    const s = {
+      workspaceRoots: this.workspaceRoots,
+      isExplorerCollapsed: this.isExplorerCollapsed,
+      viewMode: this.viewMode,
+      autoSaveEnabled: this.autoSaveEnabled,
+      recentFiles: this.recentFiles,
+      editorPaneWidth: this.editorPaneWidth,
+      activeTabPath: this.activeTab?.filePath ?? null,
+      tabPaths: this.tabs.map(t => t.filePath).filter(Boolean)
+    };
+    localStorage.setItem('markdownEditorSettings', JSON.stringify(s));
   }
 }

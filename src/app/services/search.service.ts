@@ -23,48 +23,28 @@ export class SearchService {
     useRegex: false
   };
 
-  // Public observables
   public readonly searchState: Observable<SearchState> = this.searchState$.asObservable();
-  
-  // Debounced search query stream
+
   public readonly debouncedSearch: Observable<string> = this.searchQuery$.pipe(
     debounceTime(300),
     distinctUntilChanged()
   );
 
   constructor() {
-    // Subscribe to debounced search to update query only
     this.debouncedSearch.subscribe(query => {
-      // Just update the query in state, don't perform search here
       const currentState = this.getCurrentState();
-      this.searchState$.next({
-        ...currentState,
-        query: query
-      });
+      this.searchState$.next({ ...currentState, query });
     });
   }
 
-  /**
-   * Get current search state
-   */
   getCurrentState(): SearchState {
     return this.searchState$.value;
   }
 
-  /**
-   * Open search and focus input
-   */
   openSearch(): void {
-    const currentState = this.getCurrentState();
-    this.searchState$.next({
-      ...currentState,
-      isActive: true
-    });
+    this.searchState$.next({ ...this.getCurrentState(), isActive: true });
   }
 
-  /**
-   * Close search and clear all results
-   */
   closeSearch(): void {
     this.searchState$.next({
       query: '',
@@ -74,14 +54,9 @@ export class SearchService {
       totalMatches: 0,
       searchMode: this.getCurrentState().searchMode
     });
-    
-    // Clear query stream
     this.searchQuery$.next('');
   }
 
-  /**
-   * Toggle search visibility
-   */
   toggleSearch(): void {
     if (this.getCurrentState().isActive) {
       this.closeSearch();
@@ -90,37 +65,15 @@ export class SearchService {
     }
   }
 
-  /**
-   * Set search mode (editor, preview, or split)
-   */
   setSearchMode(mode: SearchMode): void {
-    const currentState = this.getCurrentState();
-    this.searchState$.next({
-      ...currentState,
-      searchMode: mode
-    });
+    this.searchState$.next({ ...this.getCurrentState(), searchMode: mode });
   }
 
-  /**
-   * Update search query (triggers debounced search)
-   */
   updateSearchQuery(query: string): void {
-    const currentState = this.getCurrentState();
-    
-    // Update state immediately for UI responsiveness
-    this.searchState$.next({
-      ...currentState,
-      query: query,
-      currentIndex: 0
-    });
-
-    // Trigger debounced search
+    this.searchState$.next({ ...this.getCurrentState(), query, currentIndex: 0 });
     this.searchQuery$.next(query);
   }
 
-  /**
-   * Perform search across specified targets
-   */
   performSearch(targets: SearchTarget[]): void {
     const query = this.getCurrentState().query;
     if (!query || targets.length === 0) {
@@ -129,11 +82,7 @@ export class SearchService {
     }
 
     const allResults: SearchResult[] = [];
-
-    targets.forEach(target => {
-      const results = this.searchInContent(query, target.content);
-      allResults.push(...results);
-    });
+    targets.forEach(target => allResults.push(...this.searchInContent(query, target.content)));
 
     const currentState = this.getCurrentState();
     this.searchState$.next({
@@ -144,83 +93,58 @@ export class SearchService {
     });
   }
 
-  /**
-   * Navigate to next search result
-   */
   navigateNext(): void {
-    const currentState = this.getCurrentState();
-    if (currentState.totalMatches === 0) return;
-
-    const newIndex = currentState.currentIndex < currentState.totalMatches 
-      ? currentState.currentIndex + 1 
-      : 1;
-
-    this.searchState$.next({
-      ...currentState,
-      currentIndex: newIndex
-    });
+    const s = this.getCurrentState();
+    if (s.totalMatches === 0) return;
+    const newIndex = s.currentIndex < s.totalMatches ? s.currentIndex + 1 : 1;
+    this.searchState$.next({ ...s, currentIndex: newIndex });
   }
 
-  /**
-   * Navigate to previous search result
-   */
   navigatePrevious(): void {
-    const currentState = this.getCurrentState();
-    if (currentState.totalMatches === 0) return;
-
-    const newIndex = currentState.currentIndex > 1 
-      ? currentState.currentIndex - 1 
-      : currentState.totalMatches;
-
-    this.searchState$.next({
-      ...currentState,
-      currentIndex: newIndex
-    });
+    const s = this.getCurrentState();
+    if (s.totalMatches === 0) return;
+    const newIndex = s.currentIndex > 1 ? s.currentIndex - 1 : s.totalMatches;
+    this.searchState$.next({ ...s, currentIndex: newIndex });
   }
 
-  /**
-   * Get current search result
-   */
   getCurrentResult(): SearchResult | null {
-    const state = this.getCurrentState();
-    if (state.currentIndex === 0 || state.results.length === 0) {
-      return null;
-    }
-    return state.results[state.currentIndex - 1] || null;
+    const s = this.getCurrentState();
+    if (s.currentIndex === 0 || s.results.length === 0) return null;
+    return s.results[s.currentIndex - 1] || null;
   }
 
-  /**
-   * Update search options
-   */
   updateSearchOptions(options: Partial<SearchOptions>): void {
     this.searchOptions = { ...this.searchOptions, ...options };
-    // Note: Components will re-search when they detect option changes
   }
 
-  /**
-   * Get current search options
-   */
   getSearchOptions(): SearchOptions {
     return { ...this.searchOptions };
   }
 
-  /**
-   * Clear search results
-   */
-  private clearResults(): void {
-    const currentState = this.getCurrentState();
-    this.searchState$.next({
-      ...currentState,
-      results: [],
-      totalMatches: 0,
-      currentIndex: 0
-    });
+  // --- Replace helpers ---
+
+  replaceOne(content: string, currentIndex: number, replacement: string): string {
+    const results = this.getCurrentState().results;
+    if (!results.length || currentIndex < 1 || currentIndex > results.length) return content;
+    const result = results[currentIndex - 1];
+    return content.substring(0, result.start) + replacement + content.substring(result.end);
   }
 
+  replaceAll(content: string, replacement: string): string {
+    const results = [...this.getCurrentState().results].sort((a, b) => b.start - a.start);
+    let newContent = content;
+    for (const result of results) {
+      newContent = newContent.substring(0, result.start) + replacement + newContent.substring(result.end);
+    }
+    return newContent;
+  }
 
-  /**
-   * Search within text content and return results
-   */
+  // --- Private helpers ---
+
+  private clearResults(): void {
+    this.searchState$.next({ ...this.getCurrentState(), results: [], totalMatches: 0, currentIndex: 0 });
+  }
+
   private searchInContent(query: string, content: string): SearchResult[] {
     if (!query || !content) return [];
 
@@ -229,22 +153,15 @@ export class SearchService {
     const searchQuery = this.searchOptions.caseSensitive ? query : query.toLowerCase();
 
     let regex: RegExp;
-
     try {
       if (this.searchOptions.useRegex) {
-        const flags = this.searchOptions.caseSensitive ? 'g' : 'gi';
-        regex = new RegExp(searchQuery, flags);
+        regex = new RegExp(searchQuery, this.searchOptions.caseSensitive ? 'g' : 'gi');
       } else if (this.searchOptions.wholeWord) {
-        const escapedQuery = this.escapeRegExp(searchQuery);
-        const flags = this.searchOptions.caseSensitive ? 'g' : 'gi';
-        regex = new RegExp(`\\b${escapedQuery}\\b`, flags);
+        regex = new RegExp(`\\b${this.escapeRegExp(searchQuery)}\\b`, this.searchOptions.caseSensitive ? 'g' : 'gi');
       } else {
-        const escapedQuery = this.escapeRegExp(searchQuery);
-        const flags = this.searchOptions.caseSensitive ? 'g' : 'gi';
-        regex = new RegExp(escapedQuery, flags);
+        regex = new RegExp(this.escapeRegExp(searchQuery), this.searchOptions.caseSensitive ? 'g' : 'gi');
       }
-    } catch (e) {
-      // Invalid regex, fall back to simple search
+    } catch (_) {
       return this.simpleSearch(searchQuery, searchText, content);
     }
 
@@ -252,66 +169,32 @@ export class SearchService {
     while ((match = regex.exec(searchText)) !== null) {
       const start = match.index;
       const end = start + match[0].length;
-      
-      results.push({
-        start,
-        end,
-        text: content.substring(start, end),
-        context: this.getContext(content, start, end)
-      });
-
-      // Prevent infinite loop on zero-width matches
-      if (match.index === regex.lastIndex) {
-        regex.lastIndex++;
-      }
+      results.push({ start, end, text: content.substring(start, end), context: this.getContext(content, start, end) });
+      if (match.index === regex.lastIndex) regex.lastIndex++;
     }
-
     return results;
   }
 
-  /**
-   * Simple search fallback for when regex fails
-   */
   private simpleSearch(query: string, searchText: string, originalContent: string): SearchResult[] {
     const results: SearchResult[] = [];
     let index = 0;
-
     while ((index = searchText.indexOf(query, index)) !== -1) {
-      const start = index;
       const end = index + query.length;
-      
-      results.push({
-        start,
-        end,
-        text: originalContent.substring(start, end),
-        context: this.getContext(originalContent, start, end)
-      });
-
+      results.push({ start: index, end, text: originalContent.substring(index, end), context: this.getContext(originalContent, index, end) });
       index += query.length;
     }
-
     return results;
   }
 
-  /**
-   * Get surrounding context for a search result
-   */
   private getContext(content: string, start: number, end: number): string {
-    const contextLength = 50;
-    const beforeStart = Math.max(0, start - contextLength);
-    const afterEnd = Math.min(content.length, end + contextLength);
-    
-    const before = content.substring(beforeStart, start);
+    const len = 50;
+    const before = content.substring(Math.max(0, start - len), start);
     const match = content.substring(start, end);
-    const after = content.substring(end, afterEnd);
-    
+    const after = content.substring(end, Math.min(content.length, end + len));
     return `${before}${match}${after}`;
   }
 
-  /**
-   * Escape special regex characters
-   */
-  private escapeRegExp(string: string): string {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  private escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

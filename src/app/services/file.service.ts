@@ -32,7 +32,7 @@ export class FileService {
     return await this.electronService.writeFile(filePath, content);
   }
 
-  async saveFileAs(content: string): Promise<boolean> {
+  async saveFileAs(content: string): Promise<{ success: boolean; filePath?: string; cancelled?: boolean }> {
     return await this.electronService.saveFileAs(content);
   }
 

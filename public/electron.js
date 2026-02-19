@@ -1,98 +1,108 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const { net } = require('electron');
 
 let mainWindow;
 
-// Function to check if a port is running our Angular app
+// File watcher state
+const fileWatchers = new Map();
+const changeTimers = new Map();
+
 async function checkAngularApp(port) {
   return new Promise((resolve) => {
     const request = net.request(`http://localhost:${port}`);
-    
     request.on('response', (response) => {
       let data = '';
-      
-      response.on('data', (chunk) => {
-        data += chunk;
-      });
-      
+      response.on('data', (chunk) => { data += chunk; });
       response.on('end', () => {
-        // Check for our app-specific markers
         const isOurApp = data.includes('app-root') && (
-          data.includes('Markdown Editor') || 
+          data.includes('Markdown Editor') ||
           data.includes('markdown-editor-app') ||
           data.includes('MarkdownEditor')
         );
         resolve(isOurApp);
       });
     });
-    
-    request.on('error', () => {
-      resolve(false);
-    });
-    
-    // Set a timeout for the request
-    setTimeout(() => {
-      request.abort();
-      resolve(false);
-    }, 2000);
-    
+    request.on('error', () => resolve(false));
+    setTimeout(() => { request.abort(); resolve(false); }, 2000);
     request.end();
   });
 }
 
-// Function to find the correct Angular dev server port
 async function findAngularDevServerPort() {
   const commonPorts = [4200, 4201, 4202, 4203, 4204, 4205, 4250];
-  
-  console.log('Searching for Angular dev server...');
-  
   for (const port of commonPorts) {
-    console.log(`Checking port ${port}...`);
-    const isOurApp = await checkAngularApp(port);
-    
-    if (isOurApp) {
-      console.log(`Found Angular dev server on port ${port}`);
-      return port;
-    }
+    if (await checkAngularApp(port)) return port;
   }
-  
-  console.warn('Could not find Angular dev server, defaulting to port 4200');
-  console.warn('Make sure the Angular development server is running');
   return 4200;
 }
 
 async function createWindow() {
-  // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1300,
     height: 800,
+    minWidth: 800,
+    minHeight: 500,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, '../src/assets/icon.png')
+    icon: path.join(__dirname, '../src/assets/android-chrome-512x512.png'),
+    titleBarStyle: 'default',
+    show: false
   });
 
-  // (Context menu added later after load logic to avoid duplicate definitions)
+  // Show window when ready to avoid flash
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
-  // Load the Angular app with dynamic port detection
-  // Consider development if app isn't packaged OR explicit env var set
+  // Unsaved changes handler on close
+  mainWindow.on('close', async (event) => {
+    event.preventDefault();
+    try {
+      const dirtyState = await mainWindow.webContents.executeJavaScript('window.__dirtyState__ || null');
+      if (!dirtyState || !dirtyState.isDirty) {
+        mainWindow.destroy();
+        return;
+      }
+      const fileName = dirtyState.fileName || 'Untitled';
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['Save', "Don't Save", 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+        title: 'Unsaved Changes',
+        message: `Save changes to "${fileName}"?`,
+        detail: 'Your changes will be lost if you close without saving.'
+      });
+      if (result.response === 0) {
+        if (dirtyState.filePath && dirtyState.content !== undefined) {
+          try { await fs.writeFile(dirtyState.filePath, dirtyState.content, 'utf-8'); } catch (e) {}
+        }
+        mainWindow.destroy();
+      } else if (result.response === 1) {
+        mainWindow.destroy();
+      }
+      // response === 2: Cancel — keep window open
+    } catch (err) {
+      mainWindow.destroy();
+    }
+  });
+
+  mainWindow.on('closed', () => { mainWindow = null; });
+
   const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
   let url;
-  
+
   if (isDev) {
     const port = await findAngularDevServerPort();
     url = `http://localhost:${port}`;
-    console.log(`Loading Angular app from: ${url}`);
   } else {
     url = path.join(__dirname, '../dist/index.html');
-    console.log(`Loading production build from: ${url}`);
   }
 
-  // Load the URL
   try {
     if (isDev) {
       await mainWindow.loadURL(url);
@@ -100,90 +110,46 @@ async function createWindow() {
       await mainWindow.loadFile(url);
     }
   } catch (error) {
-    console.error('Failed to load application:', error);
-    
-    // If development mode fails, show an error dialog
     if (isDev) {
-      dialog.showErrorBox(
-        'Development Server Not Found',
-        'Could not connect to the Angular development server.\n\n' +
-        'Please make sure the Angular development server is running:\n' +
-        'npm run ng serve\n\n' +
-        'The application will now close.'
-      );
+      dialog.showErrorBox('Dev Server Not Found',
+        'Could not connect to Angular dev server.\nRun: npm start\n\nThe app will now close.');
       app.quit();
     }
   }
 
-  // DevTools helpers (open automatically in dev once content is loaded)
-  if (isDev) {
-    mainWindow.webContents.once('did-frame-finish-load', () => {
-      if (!mainWindow.webContents.isDevToolsOpened()) {
-        mainWindow.webContents.openDevTools({ mode: 'detach' });
-      }
-    });
-  }
-
-  // Simple context menu to toggle DevTools anywhere
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Reload', click: () => mainWindow.reload() },
-    { label: 'Toggle DevTools (F12)', click: () => mainWindow.webContents.toggleDevTools() }
-  ]);
-  mainWindow.webContents.on('context-menu', () => contextMenu.popup());
-
-  // Keyboard shortcuts for DevTools even with no application menu
+  // Block F5 / Ctrl+R (reload) and all DevTools shortcuts
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    // F12
-    if (input.type === 'keyDown' && input.code === 'F12') {
-      mainWindow.webContents.toggleDevTools();
-      event.preventDefault();
-    }
-    // Ctrl+Shift+I / Cmd+Alt+I
-    if (
-      input.type === 'keyDown' &&
-      ((input.control && input.shift && input.code === 'KeyI') || // Windows/Linux
-        (input.meta && input.alt && input.code === 'KeyI')) // macOS style
-    ) {
-      mainWindow.webContents.toggleDevTools();
-      event.preventDefault();
-    }
-  });
-
-  // Handle window closed
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+    if (input.type !== 'keyDown') return;
+    // Reload shortcuts
+    if (input.code === 'F5') { event.preventDefault(); return; }
+    if ((input.control || input.meta) && input.code === 'KeyR') { event.preventDefault(); return; }
+    // Block F12 DevTools shortcut (Ctrl+Shift+I / Cmd+Alt+I remain available)
+    if (input.code === 'F12') { event.preventDefault(); return; }
   });
 }
 
-// App event handlers
 app.whenReady().then(async () => {
-  // Hide default menu
   Menu.setApplicationMenu(null);
   await createWindow();
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', async () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    await createWindow();
-  }
+  if (BrowserWindow.getAllWindows().length === 0) await createWindow();
 });
 
-// IPC handlers
+// ============================================================
+// IPC Handlers — File Dialogs
+// ============================================================
+
 ipcMain.handle('select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory']
   });
-  
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
-  }
-  return null;
+  return (!result.canceled && result.filePaths.length > 0) ? result.filePaths[0] : null;
 });
 
 ipcMain.handle('select-file', async () => {
@@ -194,11 +160,7 @@ ipcMain.handle('select-file', async () => {
       { name: 'All Files', extensions: ['*'] }
     ]
   });
-  
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
-  }
-  return null;
+  return (!result.canceled && result.filePaths.length > 0) ? result.filePaths[0] : null;
 });
 
 ipcMain.handle('select-multiple-files', async () => {
@@ -209,15 +171,10 @@ ipcMain.handle('select-multiple-files', async () => {
       { name: 'All Files', extensions: ['*'] }
     ]
   });
-  
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths;
-  }
-  return [];
+  return (!result.canceled && result.filePaths.length > 0) ? result.filePaths : [];
 });
 
 ipcMain.handle('select-folder-or-file', async () => {
-  // Show file dialog that properly displays markdown files
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     filters: [
@@ -228,27 +185,21 @@ ipcMain.handle('select-folder-or-file', async () => {
     title: 'Select Markdown File',
     buttonLabel: 'Select File'
   });
-  
   if (!result.canceled && result.filePaths.length > 0) {
-    const selectedPath = result.filePaths[0];
-    return {
-      path: selectedPath,
-      isDirectory: false
-    };
+    return { path: result.filePaths[0], isDirectory: false };
   }
-  
   return null;
 });
+
+// ============================================================
+// IPC Handlers — File Read / Write
+// ============================================================
 
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
     const stats = await fs.stat(filePath);
-    if (!stats.isFile()) {
-      console.error(`Attempted to read a directory: ${filePath}`);
-      throw new Error('Cannot read a directory as a file');
-    }
-    const content = await fs.readFile(filePath, 'utf-8');
-    return content;
+    if (!stats.isFile()) throw new Error('Not a file');
+    return await fs.readFile(filePath, 'utf-8');
   } catch (error) {
     console.error('Error reading file:', error);
     return '';
@@ -272,54 +223,56 @@ ipcMain.handle('save-file-as', async (event, content) => {
       { name: 'All Files', extensions: ['*'] }
     ]
   });
-  
   if (!result.canceled && result.filePath) {
     try {
       await fs.writeFile(result.filePath, content, 'utf-8');
-      return true;
+      return { success: true, filePath: result.filePath };
     } catch (error) {
-      console.error('Error saving file:', error);
-      return false;
+      return { success: false, error: error.message };
     }
   }
-  return false;
+  return { success: false, cancelled: true };
 });
+
+// ============================================================
+// IPC Handlers — Directory Tree
+// ============================================================
 
 ipcMain.handle('get-directory-contents', async (event, dirPath) => {
   try {
     const items = await fs.readdir(dirPath, { withFileTypes: true });
     const contents = [];
-    
+
     for (const item of items) {
+      // Skip hidden files/folders (starting with '.')
+      if (item.name.startsWith('.')) continue;
+      // Skip node_modules and common build output dirs
+      if (item.isDirectory() && ['node_modules', 'dist', '.git', '.angular', '__pycache__'].includes(item.name)) continue;
+
       const itemPath = path.join(dirPath, item.name);
-      const isDirectory = item.isDirectory();
-      const fileName = item.name.toLowerCase();
-      
-      // Include directories and markdown files (.md, .markdown extensions)
-      const isMarkdownFile = fileName.endsWith('.md') || fileName.endsWith('.markdown');
-      
-      if (isDirectory || isMarkdownFile) {
-        contents.push({
-          name: item.name,
-          path: itemPath,
-          isDirectory: isDirectory
-        });
-      }
+      contents.push({
+        name: item.name,
+        path: itemPath,
+        isDirectory: item.isDirectory()
+      });
     }
-    
-    // Sort to show directories first, then files alphabetically
+
     contents.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
     });
-    
+
     return contents;
   } catch (error) {
     console.error('Error reading directory:', error);
     return [];
   }
 });
+
+// ============================================================
+// IPC Handlers — Create / Delete / Rename
+// ============================================================
 
 ipcMain.handle('create-new-file', async (event, defaultPath) => {
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -330,23 +283,49 @@ ipcMain.handle('create-new-file', async (event, defaultPath) => {
       { name: 'All Files', extensions: ['*'] }
     ]
   });
-  
   if (!result.canceled && result.filePath) {
     try {
-      // Create the file with some default content
       const defaultContent = '# New Document\n\nStart writing your markdown here...\n';
       await fs.writeFile(result.filePath, defaultContent, 'utf-8');
-      return {
-        success: true,
-        filePath: result.filePath,
-        content: defaultContent
-      };
+      return { success: true, filePath: result.filePath, content: defaultContent };
     } catch (error) {
-      console.error('Error creating new file:', error);
       return { success: false, error: error.message };
     }
   }
   return { success: false, cancelled: true };
+});
+
+ipcMain.handle('create-file-at-path', async (event, filePath, content = '') => {
+  try {
+    // Check file doesn't already exist
+    try {
+      await fs.access(filePath);
+      return { success: false, error: 'File already exists' };
+    } catch (_) { /* file doesn't exist, good */ }
+
+    await fs.writeFile(filePath, content, 'utf-8');
+    return { success: true, filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('create-folder-at-path', async (event, folderPath) => {
+  try {
+    await fs.mkdir(folderPath, { recursive: false });
+    return { success: true, folderPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('rename-path', async (event, oldPath, newPath) => {
+  try {
+    await fs.rename(oldPath, newPath);
+    return { success: true, newPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('delete-file', async (event, filePath) => {
@@ -359,16 +338,83 @@ ipcMain.handle('delete-file', async (event, filePath) => {
     message: 'Are you sure you want to delete this file?',
     detail: `This action cannot be undone.\n\nFile: ${path.basename(filePath)}`
   });
-  
-  if (result.response === 0) { // Delete button clicked
+  if (result.response === 0) {
     try {
       await fs.unlink(filePath);
       return { success: true };
     } catch (error) {
-      console.error('Error deleting file:', error);
       return { success: false, error: error.message };
     }
   }
-  
   return { success: false, cancelled: true };
+});
+
+ipcMain.handle('delete-path', async (event, itemPath) => {
+  try {
+    const stats = await fs.stat(itemPath);
+    const name = path.basename(itemPath);
+    const isDir = stats.isDirectory();
+
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Delete', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: `Delete ${isDir ? 'Folder' : 'File'}`,
+      message: `Delete "${name}"?`,
+      detail: isDir
+        ? 'This will permanently delete the folder and all its contents. This cannot be undone.'
+        : 'This action cannot be undone.'
+    });
+
+    if (result.response === 0) {
+      if (isDir) {
+        await fs.rm(itemPath, { recursive: true, force: true });
+      } else {
+        await fs.unlink(itemPath);
+      }
+      return { success: true };
+    }
+    return { success: false, cancelled: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ============================================================
+// IPC Handlers — File Watcher
+// ============================================================
+
+ipcMain.handle('watch-file', (event, filePath) => {
+  if (fileWatchers.has(filePath)) {
+    try { fileWatchers.get(filePath).close(); } catch (_) {}
+  }
+  try {
+    const watcher = fsSync.watch(filePath, () => {
+      if (changeTimers.has(filePath)) clearTimeout(changeTimers.get(filePath));
+      changeTimers.set(filePath, setTimeout(() => {
+        changeTimers.delete(filePath);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('file-changed', filePath);
+        }
+      }, 500));
+    });
+    watcher.on('error', () => fileWatchers.delete(filePath));
+    fileWatchers.set(filePath, watcher);
+    return true;
+  } catch (_) {
+    return false;
+  }
+});
+
+ipcMain.handle('unwatch-file', (event, filePath) => {
+  if (fileWatchers.has(filePath)) {
+    try { fileWatchers.get(filePath).close(); } catch (_) {}
+    fileWatchers.delete(filePath);
+  }
+  if (changeTimers.has(filePath)) {
+    clearTimeout(changeTimers.get(filePath));
+    changeTimers.delete(filePath);
+  }
+  return true;
 });

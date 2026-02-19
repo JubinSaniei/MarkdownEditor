@@ -1,130 +1,658 @@
-// Component-specific styles
-.btn-viewmode {
-  margin-left: var(--space-2);
-}
-
-.file-path {
-  margin-left: auto;
-  font-style: italic;
-  color: var(--text-tertiary);
-  flex: 1;
-  text-align: center;
-  min-width: 0;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-}
-
-// Search functionality styles
-.search-container {
+// ── App Shell Layout ─────────────────────────────────────────
+.app-shell {
   display: flex;
-  align-items: center;
-  margin: 0 var(--space-4);
-  opacity: 0;
-  transform: scaleX(0);
-  transform-origin: right;
-  transition: all var(--transition-base);
-  
-  &.visible {
-    opacity: 1;
-    transform: scaleX(1);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+// ── Sidebar ──────────────────────────────────────────────────
+.sidebar {
+  flex: 0 0 260px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: flex-basis var(--transition-base), border-color var(--transition-base);
+
+  &.collapsed {
+    flex-basis: 0;
+    border-right-color: transparent;
+    overflow: hidden;
+  }
+
+  // Give the file-explorer host element a constrained height so its
+  // inner .tree-scroll flex item can activate overflow-y scrolling.
+  app-file-explorer {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 }
 
-.search-bar {
+// ── Main Area ─────────────────────────────────────────────────
+.main-area {
+  flex: 1;
   display: flex;
-  align-items: center;
-  background: var(--surface-overlay);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  padding: var(--space-1);
-  min-width: 280px;
-  backdrop-filter: blur(8px);
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
 }
 
-.search-input {
+// ── Toolbar ───────────────────────────────────────────────────
+.toolbar {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  gap: var(--space-1);
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  z-index: 10;
+}
+
+.tb-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-subtle);
+  margin: 0 var(--space-2);
+  flex-shrink: 0;
+}
+
+.tb-spacer {
+  flex: 1;
+}
+
+// Toolbar buttons
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  outline: none;
+
+  &:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+    border-color: var(--border-subtle);
+  }
+
+  &.active {
+    background: var(--active-bg);
+    color: var(--accent);
+    border-color: var(--accent-muted);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent-muted);
+  }
+
+  svg {
+    flex-shrink: 0;
+    opacity: .85;
+  }
+}
+
+.icon-btn {
+  padding: 5px 7px;
+}
+
+// Sidebar toggle
+.sidebar-toggle {
+  svg {
+    opacity: .7;
+  }
+  &:hover svg { opacity: 1; }
+}
+
+// View mode group
+.view-mode-group {
+  display: flex;
+  align-items: center;
+  background: var(--input-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 1px;
+}
+
+.view-btn {
+  border-radius: calc(var(--radius-md) - 2px);
+  padding: 3px 8px;
+  font-size: 11.5px;
+  border: none;
+
+  &.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+
+    svg { opacity: 1; }
+  }
+
+  .view-label {
+    font-size: 11px;
+    letter-spacing: .01em;
+  }
+}
+
+// Save button
+.save-btn {
+  padding: 4px 10px;
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+  font-size: 12px;
+
+  &:hover {
+    background: var(--accent-hover);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .chevron {
+    opacity: .8;
+    transition: transform var(--transition-fast);
+  }
+
+  .dropdown.open & .chevron {
+    transform: rotate(180deg);
+  }
+}
+
+// Dropdown
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 150px;
+  z-index: 200;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: all var(--transition-fast);
+}
+
+.dropdown.open .dropdown-menu {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  gap: var(--space-3);
+
+  &:first-child { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  &:last-child  { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+  &:only-child  { border-radius: var(--radius-lg); }
+
+  &:hover { background: var(--hover-bg); }
+
+  kbd {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    background: var(--input-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+}
+
+// ── External Change Banner ────────────────────────────────────
+.change-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 16px;
+  background: var(--warning-bg);
+  border-bottom: 1px solid var(--warning-border);
+  font-size: 12.5px;
+  color: var(--warning-text);
+  flex-shrink: 0;
+
+  svg {
+    flex-shrink: 0;
+    opacity: .9;
+  }
+
+  span { flex: 1; }
+}
+
+.banner-btn {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--warning-border);
+  background: transparent;
+  color: var(--warning-text);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover { background: var(--warning-border); }
+
+  &.primary {
+    background: var(--warning-text);
+    color: #fff;
+    border-color: transparent;
+    &:hover { opacity: .9; }
+  }
+}
+
+// ── Editor Area ───────────────────────────────────────────────
+.editor-area {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.pane {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  // Component host elements must fill the pane's column height.
+  // Without this they collapse to content-height and inner overflow never
+  // activates, making scroll (and scroll-sync) impossible.
+  app-markdown-editor,
+  app-markdown-preview {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+.split-divider {
+  flex: 0 0 5px;
+  background: var(--border-subtle);
+  cursor: col-resize;
+  transition: background var(--transition-fast);
+  position: relative;
+
+  &:hover, &.dragging {
+    background: var(--accent-muted);
+  }
+}
+
+.app-shell.split-dragging {
+  user-select: none;
+  cursor: col-resize;
+}
+
+// ── Tab Bar ───────────────────────────────────────────────────
+.tab-bar {
+  height: 33px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  background: var(--bg-secondary, var(--bg-primary));
+  border-bottom: 1px solid var(--border-subtle);
+
+  &::-webkit-scrollbar { height: 3px; }
+  &::-webkit-scrollbar-thumb { background: var(--border-primary); border-radius: 2px; }
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px 0 10px;
+  min-width: 100px;
+  max-width: 200px;
+  cursor: pointer;
+  border-right: 1px solid var(--border-subtle);
+  position: relative;
+  color: var(--text-secondary);
+  font-size: 12px;
+  user-select: none;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
+
+  &.active {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+  }
+
+  .tab-close {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+
+  &:hover .tab-close,
+  &.active .tab-close {
+    opacity: 1;
+  }
+}
+
+.tab.preview .tab-name {
+  font-style: italic;
+}
+
+.tab-dirty {
+  color: var(--warning, #f59e0b);
+  font-size: 9px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tab-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.tab-close {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
+}
+
+// ── Search / Replace Overlay ──────────────────────────────────
+.search-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+
+  &.visible {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-panel {
+  margin: 8px 8px 0 0;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  min-width: 360px;
+}
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+
+  & + .sp-row {
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
+.sp-toggle-replace {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  padding: 0;
+
+  &:hover { background: var(--hover-bg); color: var(--text-primary); }
+
+  svg { transition: transform var(--transition-fast); }
+
+  &.open svg { transform: rotate(90deg); }
+}
+
+.sp-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--input-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 4px 0 8px;
+  gap: 4px;
+
+  &:focus-within {
+    border-color: var(--accent-muted);
+    box-shadow: 0 0 0 2px var(--accent-faint);
+  }
+}
+
+.sp-input {
   flex: 1;
   border: none;
   outline: none;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--font-size-sm);
-  min-width: 140px;
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
-  background: var(--background-secondary);
+  background: transparent;
   color: var(--text-primary);
-  
-  &:focus {
-    background-color: var(--background-tertiary);
+  font-size: 12.5px;
+  padding: 4px 0;
+  min-width: 0;
+
+  &::placeholder { color: var(--text-tertiary); }
+}
+
+.sp-options {
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.sp-opt {
+  padding: 2px 5px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-mono);
+
+  &:hover { background: var(--hover-bg); color: var(--text-primary); }
+
+  &.active {
+    background: var(--active-bg);
+    color: var(--accent);
   }
 }
 
-.search-controls {
+.sp-nav {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
+  flex-shrink: 0;
 }
 
-// Search buttons use global .btn-search class
-
-.search-info {
-  font-size: var(--font-size-xs);
+.sp-count {
+  font-size: 11px;
   color: var(--text-tertiary);
-  margin: 0 var(--space-1);
+  padding: 0 4px;
   white-space: nowrap;
-  font-weight: 500;
+  min-width: 54px;
+  text-align: center;
 }
 
-// Search toggle uses .btn.btn-secondary classes
-// Toolbar styles
-.toolbar-actions {
-  margin-left: auto;
+.sp-nav-btn {
+  width: 22px;
+  height: 22px;
   display: flex;
-  gap: var(--space-3);
-}
-
-.btn-toggle {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-primary);
-  background: linear-gradient(180deg, var(--background-secondary) 0%, var(--background-tertiary) 100%);
-  color: var(--text-primary);
-  border-radius: var(--radius-md);
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: var(--font-size-base);
-  margin-right: var(--space-4);
   transition: all var(--transition-fast);
-  position: relative;
-  box-shadow: var(--shadow-sm);
+  padding: 0;
+
+  &:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-primary); }
+  &:disabled { opacity: .35; cursor: not-allowed; }
+
+  &.close-btn:hover:not(:disabled) {
+    background: rgba(239,68,68,.1);
+    color: #ef4444;
+  }
 }
 
-.btn-toggle:hover {
-  background: linear-gradient(180deg, var(--background-tertiary) 0%, var(--neutral-300) 100%);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+.sp-replace-spacer {
+  width: 24px;
+  flex-shrink: 0;
 }
 
-// Tooltip removed - using HTML title attribute instead
+.replace-actions {
+  gap: 4px;
+}
 
-.editor-container {
+.sp-action-btn {
+  padding: 3px 9px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: var(--hover-bg);
+    border-color: var(--accent-muted);
+    color: var(--accent);
+  }
+
+  &:disabled { opacity: .35; cursor: not-allowed; }
+}
+
+// ── Status Bar ────────────────────────────────────────────────
+.status-bar {
+  height: 22px;
+  flex-shrink: 0;
   display: flex;
-  height: 100%;
-}
-.editor {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-}
-.preview {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--statusbar-bg);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  gap: var(--space-2);
+  user-select: none;
 }
 
-.container {
+.status-left, .status-right {
   display: flex;
-  height: 100%;
+  align-items: center;
+  gap: 5px;
 }
-.main-content {
-  flex: 1;
-  overflow-y: auto;
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+
+  svg { opacity: .6; }
+}
+
+.status-sep {
+  color: var(--border-primary);
+  font-size: 10px;
+}
+
+.status-filepath {
+  user-select: text;
+  cursor: text;
+}
+
+.autosave-flash {
+  color: var(--success);
+  animation: fadeIn 200ms ease;
+}
+
+.autosave-on {
+  color: var(--accent-muted);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }

@@ -52,6 +52,12 @@ export class MarkdownEditorComponent implements AfterViewInit {
     }
   }
 
+  scrollToTop() {
+    if (this.editorElement) {
+      this.editorElement.nativeElement.scrollTop = 0;
+    }
+  }
+
   /**
    * Clean up search highlighting - called by parent component
    */

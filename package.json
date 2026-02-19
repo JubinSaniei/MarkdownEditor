@@ -1,6 +1,6 @@
 {
   "name": "markdown-editor-app",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Angular + Electron Markdown Editor",
   "main": "public/electron.js",
   "homepage": "./",
@@ -12,7 +12,8 @@
     "electron-dev:4201": "concurrently \"ng serve --port 4201\" \"wait-on http://localhost:4201 && electron .\"",
     "electron-dev:4202": "concurrently \"ng serve --port 4202\" \"wait-on http://localhost:4202 && electron .\"",
     "build-electron": "ng build --configuration production && electron-builder",
-    "dist": "npm run build && electron-builder --publish=never"
+    "dist": "npm run build && electron-builder --publish=never",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings=0"
   },
   "keywords": [
     "angular",
@@ -62,10 +63,10 @@
       "dist/**/*",
       "public/electron.js",
       "public/preload.js",
-      "src/assets/icon.*"
+      "src/assets/*.*"
     ],
     "win": {
-      "icon": "src/assets/icon.ico",
+      "icon": "src/assets/icon-617x590.png",
       "target": [
         {
           "target": "portable",
@@ -82,11 +83,11 @@
       ]
     },
     "mac": {
-      "icon": "src/assets/icon.png",
+      "icon": "src/assets/apple-touch-icon.png",
       "category": "public.app-category.productivity"
     },
     "linux": {
-      "icon": "src/assets/icon.png",
+      "icon": "src/assets/apple-touch-icon.png",
       "target": "AppImage"
     },
     "portable": {

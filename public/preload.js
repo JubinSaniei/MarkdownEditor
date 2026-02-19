@@ -1,16 +1,34 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose protected methods that allow the renderer process to use
-// the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
+  // File dialogs
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: () => ipcRenderer.invoke('select-file'),
   selectMultipleFiles: () => ipcRenderer.invoke('select-multiple-files'),
   selectFolderOrFile: () => ipcRenderer.invoke('select-folder-or-file'),
+
+  // File read/write
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   writeFile: (filePath, content) => ipcRenderer.invoke('write-file', filePath, content),
   saveFileAs: (content) => ipcRenderer.invoke('save-file-as', content),
+
+  // Directory tree
   getDirectoryContents: (dirPath) => ipcRenderer.invoke('get-directory-contents', dirPath),
+
+  // Create / delete / rename
   createNewFile: (defaultPath) => ipcRenderer.invoke('create-new-file', defaultPath),
-  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath)
+  createFileAtPath: (filePath, content) => ipcRenderer.invoke('create-file-at-path', filePath, content),
+  createFolderAtPath: (folderPath) => ipcRenderer.invoke('create-folder-at-path', folderPath),
+  renamePath: (oldPath, newPath) => ipcRenderer.invoke('rename-path', oldPath, newPath),
+  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+  deletePath: (itemPath) => ipcRenderer.invoke('delete-path', itemPath),
+
+  // File watcher
+  watchFile: (filePath) => ipcRenderer.invoke('watch-file', filePath),
+  unwatchFile: (filePath) => ipcRenderer.invoke('unwatch-file', filePath),
+  onFileChanged: (callback) => {
+    ipcRenderer.removeAllListeners('file-changed');
+    ipcRenderer.on('file-changed', (_, filePath) => callback(filePath));
+  },
+  removeFileChangedListener: () => ipcRenderer.removeAllListeners('file-changed')
 });

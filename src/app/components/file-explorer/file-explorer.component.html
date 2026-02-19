@@ -1,105 +1,264 @@
-<div class="file-explorer">
+<div class="explorer">
+
+  <!-- ── Explorer Header ───────────────────────────────────────── -->
   <div class="explorer-header">
-    <h3>Workspace Files</h3>
-    <div class="header-buttons">
-      <button class="btn btn-secondary btn-icon" (click)="refreshWorkspace()" [disabled]="isLoading" title="Refresh Workspace">
-        <span *ngIf="!isLoading">🔄</span>
-        <span *ngIf="isLoading">⏳</span>
+    <span class="explorer-title">EXPLORER</span>
+    <div class="header-actions">
+      <button class="hdr-btn" (click)="startNewFileAtRoot()" title="New File"
+              [disabled]="workspaces.length !== 1">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V5L8 1zm0 1.5L11.5 5H8V2.5z" opacity=".7"/>
+          <path d="M6.5 8V6h1v2h2v1h-2v2h-1V9h-2V8h2z"/>
+        </svg>
       </button>
-      <button class="btn btn-secondary btn-icon" (click)="createNewFile()" title="New Markdown File">
-        📄
+      <button class="hdr-btn" (click)="startNewFolderAtRoot()" title="New Folder"
+              [disabled]="workspaces.length !== 1">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3zm4 4V5H4v2H2v1h2v2h1V8h2V7H5z"/>
+        </svg>
       </button>
-      <button class="btn btn-primary" (click)="addMultipleFiles()" title="Add Markdown Files to Workspace">
-        ➕ Add Files
+      <button class="hdr-btn" (click)="collapseAll()" title="Collapse All"
+              [disabled]="workspaces.length === 0">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <path d="M2 3h10v1H2zm1 3h8v1H3zm2 3h4v1H5z" opacity=".8"/>
+        </svg>
+      </button>
+      <button class="hdr-btn" (click)="openFolder()" title="Add Folder">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+        </svg>
       </button>
     </div>
   </div>
-  
-  <div class="file-list" 
-       *ngIf="folderGroups.length > 0"
-       role="tree" 
-       tabindex="0"
-       (keydown)="onFileListKeyDown($event)"
-       aria-label="Workspace files organized by folders">
-    
-    <div *ngFor="let group of folderGroups; trackBy: trackByFolderPath" class="folder-group">
-      
-      <!-- Folder Header -->
-      <div class="folder-header" 
-           role="treeitem"
-           [attr.aria-expanded]="group.expanded"
-           [attr.aria-label]="'Folder: ' + group.folderName + ', ' + group.files.length + ' files'"
-           tabindex="0"
-           (click)="toggleFolderGroup(group)">
-        
-        <div class="folder-content">
-          <div class="folder-icon">
-            <span class="expand-icon">{{ group.expanded ? '▼' : '▶' }}</span>
-            <span class="icon">📁</span>
-          </div>
-          <div class="folder-details">
-            <div class="folder-name">{{ group.folderName }}</div>
-            <div class="folder-info">{{ group.files.length }} file{{ group.files.length !== 1 ? 's' : '' }}</div>
-          </div>
-        </div>
+
+  <!-- ── No Workspace State ─────────────────────────────────────── -->
+  <div class="empty-state" *ngIf="workspaces.length === 0 && recentFiles.length === 0">
+    <svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor" opacity=".25">
+      <path d="M5 8a3 3 0 013-3h9.5L20 8H35a3 3 0 013 3v20a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/>
+    </svg>
+    <p>No folder open</p>
+    <button class="open-folder-btn" (click)="openFolder()">Add Folder</button>
+  </div>
+
+  <div class="tree-scroll" *ngIf="workspaces.length > 0 || recentFiles.length > 0">
+
+    <!-- ── Recent Files ─────────────────────────────────────────── -->
+    <div class="tree-section" *ngIf="recentFiles.length > 0">
+      <div class="section-header" (click)="recentExpanded = !recentExpanded">
+        <svg class="section-arrow" [class.open]="recentExpanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+          <path d="M2 1l4 3.5L2 8"/>
+        </svg>
+        <span>RECENT</span>
       </div>
-      
-      <!-- Files in Folder -->
-      <div class="folder-files" 
-           *ngIf="group.expanded"
-           role="group"
-           [attr.aria-label]="'Files in ' + group.folderName">
-        
-        <div *ngFor="let file of group.files; trackBy: trackByPath" 
-             class="file-item nested" 
-             [class.selected]="isFileSelected(file)"
-             role="treeitem"
-             tabindex="0"
-             [attr.aria-label]="getFileAriaLabel(file)"
-             (click)="onFileClick(file, $event)"
-             (keydown)="onFileKeyDown(file, $event)">
-          
-          <div class="file-content">
-            <div class="file-icon">📝</div>
-            <div class="file-details">
-              <div class="file-name">{{ getDisplayName(file) }}</div>
-            </div>
-          </div>
-          
-          <div class="file-actions">
-            <button class="btn-icon action-btn" 
-                    (click)="removeFileFromWorkspace(file.path, $event)" 
-                    title="Remove from workspace"
-                    aria-label="Remove {{ file.name }} from workspace">
-              ✖
-            </button>
-            <button class="btn-icon action-btn delete-btn" 
-                    (click)="deleteFile(file.path, $event)" 
-                    title="Delete file permanently"
-                    aria-label="Delete {{ file.name }} permanently">
-              🗑️
-            </button>
-          </div>
+      <div class="section-body" *ngIf="recentExpanded">
+        <div *ngFor="let filePath of recentFiles; trackBy: trackByFilePath"
+             class="tree-row file-row recent-row"
+             [class.selected]="selectedPath === filePath"
+             (click)="openRecentFile(filePath)"
+             (dblclick)="openRecentFileNewTab(filePath)"
+             title="{{ filePath }}">
+          <span class="row-indent"></span>
+          <svg class="file-icon md-icon" width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <path d="M3 1h6l3 3v9H3V1zm6 0v3h3" opacity=".8"/>
+          </svg>
+          <span class="row-name">{{ getFileName(filePath) }}</span>
+          <span class="row-dir">{{ getFileDir(filePath) }}</span>
         </div>
       </div>
     </div>
+
+    <!-- ── Workspace Trees ──────────────────────────────────────── -->
+    <div class="tree-section" *ngFor="let ws of workspaces; trackBy: trackByWorkspacePath">
+
+      <div class="section-header ws-section-header" (click)="ws.expanded = !ws.expanded">
+        <svg class="section-arrow" [class.open]="ws.expanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+          <path d="M2 1l4 3.5L2 8"/>
+        </svg>
+        <span class="ws-name" [title]="ws.path">{{ getWorkspaceName(ws.path) }}</span>
+        <div class="ws-actions" (click)="$event.stopPropagation()">
+          <button class="hdr-btn" (click)="startNewFileInWorkspace(ws)" title="New File in this folder">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+              <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V5L8 1zm0 1.5L11.5 5H8V2.5z" opacity=".7"/>
+              <path d="M6.5 8V6h1v2h2v1h-2v2h-1V9h-2V8h2z"/>
+            </svg>
+          </button>
+          <button class="hdr-btn" (click)="startNewFolderInWorkspace(ws)" title="New Folder in this folder">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+              <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3zm4 4V5H4v2H2v1h2v2h1V8h2V7H5z"/>
+            </svg>
+          </button>
+          <button class="hdr-btn hdr-btn-remove" (click)="removeWorkspace(ws)" title="Remove folder from explorer">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M2 2l7 7M9 2l-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="section-body" *ngIf="ws.expanded">
+
+        <!-- Loading indicator per workspace -->
+        <div class="loading-row" *ngIf="ws.loading">
+          <span class="spinner"></span>
+          <span>Loading…</span>
+        </div>
+
+        <!-- Root-level pending new item input -->
+        <div class="tree-row new-item-row" *ngIf="ws.pendingNew">
+          <span class="row-indent" style="width:8px"></span>
+          <svg class="file-icon" width="13" height="13" viewBox="0 0 13 13" fill="currentColor" opacity=".6">
+            <path *ngIf="ws.pendingNew.type==='file'" d="M2 1h5l3 3v8H2V1z"/>
+            <path *ngIf="ws.pendingNew.type==='folder'" d="M1 3a1 1 0 011-1h3L6 3h6a1 1 0 011 1v6a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+          </svg>
+          <input class="rename-input root-new-item-input"
+                 type="text"
+                 [(ngModel)]="ws.pendingNew.name"
+                 [placeholder]="ws.pendingNew.type === 'file' ? 'filename.md' : 'folder name'"
+                 (keydown)="onRootNewItemKeyDown($event, ws)"
+                 (blur)="cancelRootNewItem(ws)">
+        </div>
+
+        <!-- Tree nodes -->
+        <ng-container *ngTemplateOutlet="treeNodes; context: { $implicit: ws.nodes, depth: 0 }"></ng-container>
+
+      </div>
+    </div>
+
   </div>
-  
-  <div class="empty-state" *ngIf="!folderGroups || folderGroups.length === 0">
-    <div class="empty-content">
-      <div class="empty-icon">📁</div>
-      <h4>No Files in Workspace</h4>
-      <p>Add markdown files to get started with your workspace</p>
-      <button class="btn btn-primary" (click)="addMultipleFiles()">
-        ➕ Add Your First File
-      </button>
+</div>
+
+<!-- ── Recursive Tree Template ────────────────────────────────── -->
+<ng-template #treeNodes let-nodes let-depth="depth">
+  <div *ngFor="let node of nodes; trackBy: trackByPath">
+
+    <!-- Directory row -->
+    <div *ngIf="node.isDirectory"
+         class="tree-row dir-row"
+         [class.selected]="selectedPath === node.path"
+         [style.padding-left.px]="depth * 14 + 8"
+         [title]="node.path"
+         (click)="toggleNode(node)"
+         (contextmenu)="showContextMenu($event, node)"
+         tabindex="0"
+         (keydown.enter)="toggleNode(node)"
+         (keydown.f2)="startRename(node); $event.preventDefault()">
+
+      <!-- Expand arrow -->
+      <svg class="expand-arrow" [class.open]="node.expanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+        <path d="M2 1l4 3.5L2 8" *ngIf="!node.loading"/>
+        <circle *ngIf="node.loading" cx="4.5" cy="4.5" r="3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="10" class="spin"/>
+      </svg>
+
+      <!-- Dir icon -->
+      <svg class="dir-icon" width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+        <path *ngIf="!node.expanded" d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+        <path *ngIf="node.expanded" d="M1 4a1 1 0 011-1h3.5L6.5 4H12a1 1 0 011 1v.5L11.5 11H2.5L1 5.5V4z"/>
+      </svg>
+
+      <!-- Name / rename input -->
+      <span class="row-name" *ngIf="!node.isRenaming">{{ node.name }}</span>
+      <input class="rename-input" *ngIf="node.isRenaming"
+             type="text"
+             [(ngModel)]="node.renameValue"
+             (keydown)="onRenameKeyDown($event, node)"
+             (blur)="applyRename(node)"
+             (click)="$event.stopPropagation()">
+
+      <!-- Hover actions -->
+      <div class="row-actions" (click)="$event.stopPropagation()">
+        <button class="row-btn" (click)="startNewFile(node)" title="New File">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M5 1h3l2 2v7H1V1h4zm3 0v2h2"/><path d="M3.5 6V4.5h1V6H6v1H4.5v1.5h-1V7H2V6h1.5z"/></svg>
+        </button>
+        <button class="row-btn" (click)="startNewFolder(node)" title="New Folder">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M1 2a1 1 0 011-1h2.5L5 2h5a1 1 0 011 1v5a1 1 0 01-1 1H2a1 1 0 01-1-1V2zm3 3V3.5H3V5H1.5v1H3v1.5h1V6h1.5V5H4z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Children (if expanded) -->
+    <div *ngIf="node.isDirectory && node.expanded">
+      <!-- Pending new item inside this dir -->
+      <div class="tree-row new-item-row" *ngIf="node.pendingNew" [style.padding-left.px]="(depth + 1) * 14 + 8">
+        <svg class="file-icon" width="13" height="13" viewBox="0 0 13 13" fill="currentColor" opacity=".6">
+          <path *ngIf="node.pendingNew.type==='file'" d="M2 1h5l3 3v8H2V1z"/>
+          <path *ngIf="node.pendingNew.type==='folder'" d="M1 3a1 1 0 011-1h3L6 3h6a1 1 0 011 1v6a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+        </svg>
+        <input class="rename-input new-item-input"
+               type="text"
+               [(ngModel)]="node.pendingNew.name"
+               [placeholder]="node.pendingNew.type === 'file' ? 'filename.md' : 'folder name'"
+               (keydown)="onNewItemKeyDown($event, node)"
+               (blur)="cancelNewItem(node)">
+      </div>
+
+      <!-- Recursive children -->
+      <ng-container *ngIf="node.children && node.children.length > 0">
+        <ng-container *ngTemplateOutlet="treeNodes; context: { $implicit: node.children, depth: depth + 1 }"></ng-container>
+      </ng-container>
+
+      <!-- Empty dir hint -->
+      <div class="empty-dir" *ngIf="node.children && node.children.length === 0 && !node.pendingNew"
+           [style.padding-left.px]="(depth + 1) * 14 + 8">
+        empty
+      </div>
+    </div>
+
+    <!-- File row -->
+    <div *ngIf="!node.isDirectory"
+         class="tree-row file-row"
+         [class.selected]="selectedPath === node.path"
+         [style.padding-left.px]="depth * 14 + 8 + 12"
+         [title]="node.path"
+         (click)="openFile(node)"
+         (dblclick)="openFileNewTab(node)"
+         (contextmenu)="showContextMenu($event, node)"
+         tabindex="0"
+         (keydown.enter)="openFile(node)"
+         (keydown.f2)="startRename(node); $event.preventDefault()">
+
+      <svg class="file-icon md-icon" width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+        <path d="M2 1h5l3 3v8H2V1zm5 0v3h3" opacity=".85"/>
+      </svg>
+
+      <span class="row-name" *ngIf="!node.isRenaming">{{ node.name }}</span>
+      <input class="rename-input" *ngIf="node.isRenaming"
+             type="text"
+             [(ngModel)]="node.renameValue"
+             (keydown)="onRenameKeyDown($event, node)"
+             (blur)="applyRename(node)"
+             (click)="$event.stopPropagation()">
+
+      <div class="row-actions" (click)="$event.stopPropagation()">
+        <button class="row-btn danger" (click)="deleteItem(node)" title="Delete">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M4 1h3v1h3v1H1V2h3V1zm-2 3h6l-.5 5.5H2.5L2 4z"/></svg>
+        </button>
+      </div>
+
     </div>
   </div>
-  
-  <div class="loading-state" *ngIf="isLoading">
-    <div class="loading-content">
-      <div class="loading-spinner">⏳</div>
-      <p>Loading workspace files...</p>
-    </div>
-  </div>
+</ng-template>
+
+<!-- ── Context Menu ──────────────────────────────────────────── -->
+<div class="ctx-menu" *ngIf="contextMenu.visible"
+     [style.left.px]="contextMenu.x"
+     [style.top.px]="contextMenu.y">
+  <ng-container *ngIf="contextMenu.node?.isDirectory">
+    <button class="ctx-item" (click)="contextNewFile()">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><path d="M2 1h5l3 3v8H2V1zm5 0v3h3"/><path d="M4 7V5.5h1V7h1.5v1H5v1.5H4V8H2.5V7H4z"/></svg>
+      New File
+    </button>
+    <button class="ctx-item" (click)="contextNewFolder()">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><path d="M1 3a1 1 0 011-1h3L6 3h6a1 1 0 011 1v6a1 1 0 01-1 1H2a1 1 0 01-1-1V3zm3 3V4.5H3V6H1.5v1H3v1.5h1V7h1.5V6H4z"/></svg>
+      New Folder
+    </button>
+    <div class="ctx-sep"></div>
+  </ng-container>
+  <button class="ctx-item" (click)="contextRename()">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><path d="M9 1.5a1.5 1.5 0 012.1 2.1L4 10.7l-2.5.6.6-2.5L9 1.5z"/></svg>
+    Rename
+  </button>
+  <button class="ctx-item danger" (click)="contextDelete()">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><path d="M4 1h5v1h3v1H1V2h3V1zm-2 3h9l-.5 6H2.5L2 4z"/></svg>
+    Delete
+  </button>
 </div>
