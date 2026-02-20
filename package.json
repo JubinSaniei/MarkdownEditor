@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "Angular + Electron Markdown Editor",
   "main": "public/electron.js",
-  "homepage": "./",
+  "homepage": "https://github.com/JubinSaniei/MarkdownEditor",
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
@@ -21,7 +21,10 @@
     "markdown",
     "editor"
   ],
-  "author": "",
+  "author": {
+    "name": "Jubin",
+    "email": "jubin.saniei@gmail.com"
+  },
   "license": "MIT",
   "dependencies": {
     "@angular/animations": "^20.2.1",
@@ -67,7 +70,14 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["md", "markdown"],
+        "ext": "md",
+        "name": "Markdown File",
+        "description": "Markdown Document",
+        "role": "Editor",
+        "icon": "src/assets/icon-617x590.png"
+      },
+      {
+        "ext": "markdown",
         "name": "Markdown File",
         "description": "Markdown Document",
         "role": "Editor",
@@ -97,7 +107,8 @@
     },
     "linux": {
       "icon": "src/assets/android-chrome-512x512.png",
-      "target": "AppImage"
+      "target": "deb",
+      "category": "Utility"
     },
     "portable": {
       "artifactName": "MarkdownEditor-Portable.exe"
