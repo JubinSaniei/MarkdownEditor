@@ -27,7 +27,7 @@
 .line-number {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: 21px;
   color: var(--text-tertiary);
   text-align: right;
   padding-right: 10px;
@@ -43,35 +43,44 @@
   overflow: hidden;
 }
 
-// ── Search highlight backdrop ─────────────────────────────────
-.highlight-backdrop {
+// ── Search highlight clip + backdrop ──────────────────────────
+// The clip container sits behind the textarea (z-index 1 vs 2) and
+// clips the full-height backdrop div. Scrolling is done via CSS
+// transform instead of native scrollTop, which eliminates the
+// scrollHeight mismatch between <div> and <textarea>.
+.highlight-clip {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.highlight-backdrop {
   padding: 32px 24px;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: 21px;
   color: transparent;
   background: transparent;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow: auto;
-  overflow-x: hidden;
-  pointer-events: none;
-  z-index: 1;
   border: none;
   margin: 0;
   box-sizing: border-box;
+  will-change: transform;
+}
 
-  .search-highlight {
-    background-color: rgba(255, 214, 0, .45);
-    color: transparent;
-    border-radius: 2px;
+// Highlight spans are injected via innerHTML (not Angular template), so they
+// don't receive the component's _ngcontent attribute. Use ::ng-deep to match them.
+:host ::ng-deep .highlight-clip .search-highlight {
+  background-color: rgba(255, 214, 0, .45);
+  color: transparent;
+  border-radius: 2px;
 
-    &.current {
-      background-color: rgba(255, 140, 0, .65);
-      box-shadow: 0 0 0 1px rgba(255, 100, 0, .7);
-    }
+  &.current {
+    background-color: rgba(255, 140, 0, .65);
+    box-shadow: 0 0 0 1px rgba(255, 100, 0, .7);
   }
 }
 
@@ -84,14 +93,14 @@
   padding: 32px 24px;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: 21px;
   resize: none;
   background: var(--bg-secondary);
   color: var(--text-primary);
   z-index: 2;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   box-sizing: border-box;
   caret-color: var(--accent);

@@ -5,6 +5,7 @@
     <app-file-explorer
       [workspaceRoots]="workspaceRoots"
       [recentFiles]="recentFiles"
+      [selectedPath]="currentFilePath"
       (fileOpened)="onFileOpened($event)"
       (fileDoubleClicked)="openFileAsNewTab($event)"
       (workspaceOpened)="onWorkspaceOpened($event)"

@@ -9,7 +9,9 @@
 
     <!-- Editor area: backdrop + textarea share a position:relative context -->
     <div class="editor-area">
-      <div class="highlight-backdrop" #highlightBackdrop></div>
+      <div class="highlight-clip">
+        <div class="highlight-backdrop" #highlightBackdrop></div>
+      </div>
       <textarea
         class="markdown-editor"
         [value]="content"

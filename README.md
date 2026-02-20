@@ -1,202 +1,117 @@
 # Markdown Editor
 
-A modern, feature-rich desktop markdown editor built with Angular and Electron. Provides a professional editing experience with multiple view modes, advanced search capabilities, and beautiful theming.
+A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with tabs, multiple view modes, advanced search with replace, and resizable split panes.
 
 ![Markdown Editor](src/assets/demo.gif)
 
-*Professional markdown editing with VS Code-inspired dark theme*
+## Features
 
-## ✨ Features
+### Tabs
+- **Single-click** a file to open it in a preview tab (italicized title)
+- **Double-click** to promote it to a permanent tab
+- Middle-click or the × button to close a tab
+- Dirty state indicator (●) when a file has unsaved changes
+- `Ctrl+W` closes the active tab
 
-### Core Functionality
-- **📁 File-Based Workspace**: Add individual .md files to your workspace with folder grouping for organization
-- **🔄 Multi-View Modes**: 
-  - **👁 Preview Mode**: Live rendered markdown preview
-  - **✎ Edit Mode**: Focused writing experience
-  - **↔ Split Mode**: Side-by-side editing and preview with scroll sync
-- **💾 File Operations**: 
-  - Save and Save As functionality
-  - Create new markdown files directly in the app
-  - Delete files permanently with confirmation
-  - Remove files from workspace without deleting
-- **🏠 Workspace Persistence**: Remembers individual files and settings between sessions
+### View Modes
+- **Preview** — rendered markdown output
+- **Edit** — focused plain-text editor with line numbers and search highlighting
+- **Split** — side-by-side editor and preview with synchronized scrolling and a draggable resizable divider
 
-### Advanced Features
-- **🔍 Powerful Search**: 
-  - Global search with Ctrl+F
-  - F3/Shift+F3 navigation
-  - Visual highlighting in both edit and preview modes
-  - Real-time search results with match counter
-- **🎨 Dual Theme System**:
-  - 🌙 **Light Theme**: Clean, minimal design
-  - 🌑 **Dark Theme**: VS Code-inspired with optimized lighter blue colors for better readability
-- **⚡ Scroll Synchronization**: Seamless scroll sync between editor and preview in split mode
-- **📱 Responsive Design**: Collapsible sidebar with smooth animations
-- **🎯 Modern UI**: Contemporary design with smooth transitions
-- **📁 Smart File Organization**: Automatic folder grouping with collapsible sections
-- **🔧 Centralized Theme System**: Consistent theming across all components
-- **📋 Enhanced Markdown Rendering**:
-  - GitHub Flavored Markdown (GFM) support with proper tables
-  - Syntax-highlighted code blocks with language labels
-  - Responsive table rendering with horizontal scrolling
-  - Smart text wrapping in code blocks to prevent horizontal scrollbars
-  - Custom styling for blockquotes, lists, and inline code
+### File Explorer
+- Multi-root workspace: add multiple folders, each shown as a collapsible tree
+- Single-click opens a file; double-click opens it in a new permanent tab
+- Active tab's file is automatically highlighted and its parent folders expanded in the explorer
+- Rename (F2), delete, and create new files/folders inline
+- Recent files section at the top of the explorer
 
-## 🛠 Technology Stack
+### Search & Replace
+- `Ctrl+F` opens the search bar; `Escape` or × closes it
+- Case-sensitive, whole-word, and regex search options
+- `F3` / `Shift+F3` or `Enter` / `Shift+Enter` to navigate results
+- Match counter (current/total)
+- Visual highlighting in both editor and preview panes simultaneously in split mode
+- Replace and Replace All support (edit/split modes)
+
+### File Operations
+- `Ctrl+S` — Save; Save As via the save dropdown
+- `Ctrl+N` — New untitled file
+- Auto-save (toggleable) with a "Saved" flash indicator
+- External change detection with reload/dismiss prompt
+
+### Workspace Persistence
+- Workspace roots, open tabs, active tab, view mode, split divider position, and recent files are all restored on next launch
+
+### Theming
+- Light and dark themes via a single toggle button
+- Preference persisted in localStorage
+
+## Technology Stack
 
 - **Frontend**: Angular 20+ with TypeScript
-- **Desktop**: Electron for cross-platform desktop app  
-- **Markdown**: Marked v16+ library for GitHub Flavored Markdown parsing and rendering
-- **Styling**: SCSS with modern design system (CSS custom properties)
-- **Fonts**: JetBrains Mono, Fira Code for code editing
-- **Icons**: Custom application logo (logo.png)
+- **Desktop**: Electron (cross-platform)
+- **Markdown**: Marked v16+ (GitHub Flavored Markdown) + highlight.js for code blocks
+- **Styling**: SCSS with CSS custom properties design system
+- **Editor font**: JetBrains Mono / Fira Code
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (version 18 or higher)
-- npm package manager
+- Node.js 18+
+- npm
 
 ### Installation
 
-1. Clone or download this repository
-2. Navigate to the project directory
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-### Development
-
-#### Run in Browser (Angular only)
-```bash
-npm start
-```
-This starts the Angular development server at http://localhost:4200
-
-#### Run as Electron App
-```bash
-npm run electron-dev
-```
-This starts both the Angular dev server and Electron app
-
-### Building for Production
-
-#### Build Angular App
-```bash
-npm run build
-```
-
-#### Build Electron Distribution
-```bash
-npm run dist
-```
-This runs the Angular production build and then `electron-builder` to create desktop distribution artifacts.
-
-#### Alternative: Directly Run electron-builder
-If you've already built the Angular app ( `npm run build` ) you can invoke the packager directly:
-```bash
-npx electron-builder --publish=never
-```
-You can also build only for your current platform/arch (auto-detected) or specify targets, for example:
-```bash
-npx electron-builder --win portable
-```
-
-#### Output Artifacts
-Build outputs are written to the `dist-electron/` directory (configured in `package.json > build.directories.output`). After a successful Windows build you'll typically see:
-- `MarkdownEditor-Setup.exe` (NSIS installer)
-- `MarkdownEditor-Portable.exe` (portable no-install version)
-- `win-unpacked/` (unzipped unpacked app directory useful for debugging)
-- Supporting metadata files (e.g. `*.blockmap`, config yaml) depending on target
-
-Run the app by either launching the portable executable directly or installing via the setup installer. During development you can continue to use `npm run electron-dev` for a live-reload experience.
-
-To adjust targets (e.g., add macOS dmg, Linux AppImage) edit the `build` section in `package.json`.
-
-## 🎯 Usage
-
-### Getting Started
-1. **📂 Add Files to Workspace**: Click "➕ Add File" to select individual .md files for your workspace
-2. **📝 Create New Files**: Click "📄" to create new markdown files directly in the app
-3. **📋 File Management**: 
-   - Files are automatically grouped by their parent folders for organization
-   - **Single-click** any file to open it for editing
-   - Use action buttons (✖ to remove from workspace, 🗑️ to delete permanently)
-4. **🔄 View Modes**: Toggle between Preview (👁), Edit (✎), and Split (↔) modes
-5. **🎨 Theme**: Switch between Light (🌙) and Dark (🌑) themes
-6. **💾 Save Options**: Use the save dropdown for Save or Save As operations
-
-### Navigation & Editing
-- **🔍 Search**: Press `Ctrl+F` to open search, use `F3`/`Shift+F3` to navigate results
-- **📝 Editor**: Full-featured markdown editor with syntax highlighting
-- **👀 Preview**: Live rendered markdown with GitHub Flavored Markdown support
-  - **📊 Tables**: Full table support with borders, hover effects, and responsive design
-  - **💻 Code Blocks**: Syntax highlighting with language labels and smart text wrapping
-  - **📝 Typography**: Enhanced headings, blockquotes, lists, and inline code styling
-- **⚡ Split Mode**: Synchronized scrolling between editor and preview
-- **📱 Sidebar**: Click `◀` to collapse/expand the file explorer
-
-## ⌨️ Keyboard Shortcuts
-
-### File Operations
-- `Ctrl+S` - Save current file  
-- `Ctrl+Shift+S` - Save As dialog
-
-### Search & Navigation  
-- `Ctrl+F` - Open search bar
-- `F3` - Next search result
-- `Shift+F3` - Previous search result
-- `Enter` - Next result (in search input)
-- `Shift+Enter` - Previous result (in search input)
-- `Escape` - Close search bar
-
-### Interface & File Management
-- Toggle view modes with the view mode button (👁/✎/↔)
-- Toggle theme with the theme button (🌙/🌑)
-- Collapse sidebar with `◀` button
-- **Single-click** files to open them immediately
-- **Enter** or **Space** on selected files to open
-- **Delete** key to remove selected files from workspace
-- **Escape** to clear file selection
-
-## ⚙️ Configuration
-
-The application automatically saves your settings including:
-- **🏠 Workspace files**: Individual markdown files added to your workspace
-- **🎨 Theme preference**: Light or dark theme selection
-- **📱 UI state**: Sidebar collapsed/expanded state
-- **👁 View mode**: Last selected view mode (preview/edit/split)
-- **📁 Folder state**: Remembers which folder groups are expanded/collapsed
-
-All settings persist between sessions using localStorage.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Troubleshooting
-
-### Port Already in Use
-If you see "Port 4200 is already in use", either:
-- Stop other Angular development servers
-- Choose a different port when prompted
-- Or kill the process using that port
-
-### Electron App Not Starting
-Make sure all dependencies are installed:
 ```bash
 npm install
 ```
 
-### File System Access Issues
-The app requires file system permissions to read/write markdown files. Make sure Electron has proper permissions on your system.
+### Development
+
+```bash
+# Angular dev server only (http://localhost:4200)
+npm start
+
+# Angular + Electron together
+npm run electron-dev
+```
+
+### Building for Production
+
+```bash
+# Angular production build → dist/
+npm run build
+
+# Build + electron-builder package → dist-electron/
+npm run dist
+```
+
+#### Output artifacts (Windows)
+
+- `MarkdownEditor-Setup.exe` — NSIS installer
+- `MarkdownEditor-Portable.exe` — portable executable
+- `win-unpacked/` — unpacked app directory
+
+To add macOS or Linux targets, edit the `build` section in `package.json`.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+S` | Save |
+| `Ctrl+N` | New file |
+| `Ctrl+W` | Close active tab |
+| `Ctrl+F` | Open/toggle search |
+| `F3` | Next result |
+| `Shift+F3` | Previous result |
+| `Escape` | Close search |
+| `Ctrl+1` | Preview mode |
+| `Ctrl+2` | Edit mode |
+| `Ctrl+3` | Split mode |
+| `F2` | Rename selected file (explorer focused) |
+| `Delete` | Delete selected file (explorer focused) |
+
+## License
+
+MIT

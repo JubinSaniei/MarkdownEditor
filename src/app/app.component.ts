@@ -724,8 +724,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     const { query, results, currentIndex, searchMode } = this.searchState;
 
     if (!query) {
-      this.markdownEditor?.closeSearch();
-      this.markdownPreview?.closeSearch();
+      // Use clearSearchHighlights (not closeSearch) to avoid stealing focus
+      // and causing scroll jumps when search opens with an empty query.
+      this.markdownEditor?.clearSearchHighlights();
+      this.markdownPreview?.clearSearchHighlights();
       return;
     }
 

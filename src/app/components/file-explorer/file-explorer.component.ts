@@ -40,6 +40,7 @@ interface ContextMenu {
 export class FileExplorerComponent implements OnChanges, OnDestroy {
   @Input() workspaceRoots: string[] = [];
   @Input() recentFiles: string[] = [];
+  @Input() selectedPath: string | null = null;
   @Output() fileOpened = new EventEmitter<string>();
   @Output() fileDoubleClicked = new EventEmitter<string>();
   @Output() workspaceOpened = new EventEmitter<string>();
@@ -47,7 +48,6 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
   @Output() recentFileOpened = new EventEmitter<string>();
 
   workspaces: RootEntry[] = [];
-  selectedPath: string | null = null;
   private clickTimer: any = null;
   recentExpanded: boolean = true;
 
@@ -73,6 +73,9 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
           this.loadWorkspace(ws);
         }
       }
+    }
+    if (changes['selectedPath'] && this.selectedPath) {
+      this.revealPath(this.selectedPath);
     }
   }
 
@@ -446,6 +449,49 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
       }
     }
     return null;
+  }
+
+  // ── Reveal in Tree ──────────────────────────────────────────
+
+  /** Expand all parent directories so the given file path is visible in the tree. */
+  private async revealPath(filePath: string) {
+    const ws = this.findWorkspaceForNode(filePath);
+    if (!ws) return;
+
+    ws.expanded = true;
+
+    // Build the list of path segments between the workspace root and the file
+    const sep = ws.path.includes('\\') ? '\\' : '/';
+    const relative = filePath.startsWith(ws.path + sep)
+      ? filePath.substring(ws.path.length + 1)
+      : null;
+    if (!relative) return;
+
+    const segments = relative.split(/[/\\]/);
+    segments.pop(); // remove the filename — we only need to expand directories
+
+    let currentNodes = ws.nodes;
+    let currentPath = ws.path;
+
+    for (const segment of segments) {
+      currentPath += sep + segment;
+      const dirNode = currentNodes.find(n => n.isDirectory && n.path === currentPath);
+      if (!dirNode) break;
+
+      // Load children if not yet loaded
+      if (dirNode.children === null) {
+        dirNode.loading = true;
+        try {
+          const contents = await this.electronService.getDirectoryContents(dirNode.path);
+          dirNode.children = this.buildNodes(contents);
+        } catch (_) {
+          dirNode.children = [];
+        }
+        dirNode.loading = false;
+      }
+      dirNode.expanded = true;
+      currentNodes = dirNode.children;
+    }
   }
 
   // ── Display Helpers ──────────────────────────────────────────

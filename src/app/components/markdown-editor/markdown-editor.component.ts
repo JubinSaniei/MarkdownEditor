@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 
 @Component({
   selector: 'app-markdown-editor',
@@ -6,12 +6,14 @@ import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterVie
   styleUrls: ['./markdown-editor.component.scss'],
   standalone: false
 })
-export class MarkdownEditorComponent implements AfterViewInit {
+export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   @Input() content: string = '';
   @Output() contentChange = new EventEmitter<string>();
   @ViewChild('editor') editorElement!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('highlightBackdrop') highlightBackdrop!: ElementRef<HTMLDivElement>;
   @ViewChild('lineNumbers') lineNumbersEl!: ElementRef<HTMLDivElement>;
+
+  private resizeObserver: ResizeObserver | null = null;
 
   get lineNumberList(): number[] {
     const count = (this.content || '').split('\n').length;
@@ -20,34 +22,72 @@ export class MarkdownEditorComponent implements AfterViewInit {
 
   trackByNumber(_: number, n: number): number { return n; }
 
-
   ngAfterViewInit() {
     if (this.editorElement && this.highlightBackdrop) {
       this.editorElement.nativeElement.addEventListener('scroll', () => {
-        if (this.highlightBackdrop) {
-          this.highlightBackdrop.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
-          this.highlightBackdrop.nativeElement.scrollLeft = this.editorElement.nativeElement.scrollLeft;
-        }
-        // Keep line-number gutter in sync
+        this.syncScroll();
         if (this.lineNumbersEl) {
           this.lineNumbersEl.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
         }
       });
 
-      this.highlightBackdrop.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
-      this.highlightBackdrop.nativeElement.scrollLeft = this.editorElement.nativeElement.scrollLeft;
+      // Match the backdrop width to the textarea's content width (excludes scrollbar)
+      // whenever the textarea resizes (window resize, split-pane drag, etc.).
+      this.resizeObserver = new ResizeObserver(() => this.syncBackdropWidth());
+      this.resizeObserver.observe(this.editorElement.nativeElement);
+
+      // After fonts load, copy the textarea's computed text properties to the
+      // backdrop so there's zero sub-pixel drift between <textarea> and <div>.
+      document.fonts.ready.then(() => {
+        this.syncBackdropStyles();
+        this.syncBackdropWidth();
+      });
     }
   }
+
+  ngOnDestroy() {
+    this.resizeObserver?.disconnect();
+  }
+
+  // ── Scroll / layout sync ─────────────────────────────────────
+
+  /** Move the backdrop via CSS transform so it stays aligned with the textarea. */
+  private syncScroll() {
+    if (!this.editorElement || !this.highlightBackdrop) return;
+    const ta = this.editorElement.nativeElement;
+    this.highlightBackdrop.nativeElement.style.transform = `translateY(${-ta.scrollTop}px)`;
+  }
+
+  /** Set the backdrop width to the textarea's clientWidth (which excludes the scrollbar). */
+  private syncBackdropWidth() {
+    if (!this.editorElement || !this.highlightBackdrop) return;
+    const ta = this.editorElement.nativeElement;
+    this.highlightBackdrop.nativeElement.style.width = ta.clientWidth + 'px';
+  }
+
+  /** Copy computed text properties from the textarea to the backdrop. */
+  private syncBackdropStyles() {
+    if (!this.editorElement || !this.highlightBackdrop) return;
+    const cs = window.getComputedStyle(this.editorElement.nativeElement);
+    const bd = this.highlightBackdrop.nativeElement.style;
+    bd.lineHeight = cs.lineHeight;
+    bd.fontFamily = cs.fontFamily;
+    bd.fontSize = cs.fontSize;
+    bd.paddingTop = cs.paddingTop;
+    bd.paddingRight = cs.paddingRight;
+    bd.paddingBottom = cs.paddingBottom;
+    bd.paddingLeft = cs.paddingLeft;
+  }
+
+  // ── Content ──────────────────────────────────────────────────
 
   onContentChange(event: any) {
     this.content = event.target.value;
     this.contentChange.emit(this.content);
   }
 
+  // ── Search highlighting (public API for parent) ──────────────
 
-  /**
-   * Highlight search results in the editor
-   */
   highlightSearchResults(query: string, results: any[], currentIndex: number) {
     if (!query || !results.length) {
       this.clearHighlights();
@@ -55,8 +95,7 @@ export class MarkdownEditorComponent implements AfterViewInit {
     }
 
     this.updateBackdropHighlights(query, results, currentIndex);
-    
-    // Scroll to current result if exists and currentIndex is valid
+
     if (currentIndex > 0 && currentIndex <= results.length && results[currentIndex - 1]) {
       this.scrollToResult(results[currentIndex - 1]);
     }
@@ -65,32 +104,34 @@ export class MarkdownEditorComponent implements AfterViewInit {
   scrollToTop() {
     if (this.editorElement) {
       this.editorElement.nativeElement.scrollTop = 0;
+      this.editorElement.nativeElement.setSelectionRange(0, 0);
     }
     if (this.lineNumbersEl) {
       this.lineNumbersEl.nativeElement.scrollTop = 0;
     }
   }
 
-  /**
-   * Clean up search highlighting - called by parent component
-   */
+  /** Clear highlights without stealing focus. */
+  clearSearchHighlights() {
+    this.clearHighlights();
+  }
+
+  /** Clear highlights and return focus to the editor. */
   closeSearch() {
     this.clearHighlights();
-    // Focus back to editor
     if (this.editorElement) {
       this.editorElement.nativeElement.focus();
     }
   }
 
+  // ── Private helpers ──────────────────────────────────────────
+
   private updateBackdropHighlights(query: string, results: any[], currentIndex: number) {
-    if (!this.highlightBackdrop || !this.editorElement) {
-      return;
-    }
+    if (!this.highlightBackdrop || !this.editorElement) return;
 
     const textarea = this.editorElement.nativeElement;
     const backdrop = this.highlightBackdrop.nativeElement;
-    
-    // Add search-active class to textarea
+
     if (query && results.length > 0) {
       textarea.classList.add('search-active');
     } else {
@@ -102,61 +143,50 @@ export class MarkdownEditorComponent implements AfterViewInit {
       return;
     }
 
-    // Sync scroll position immediately
-    backdrop.scrollTop = textarea.scrollTop;
-    backdrop.scrollLeft = textarea.scrollLeft;
+    // Build highlighted HTML, escaping ALL content to prevent
+    // raw < > & from breaking the backdrop layout.
+    const sortedMatches = [...results].sort((a, b) => a.start - b.start);
+    let html = '';
+    let lastEnd = 0;
 
-    // Create highlighted text for backdrop
-    let highlightedText = this.content;
-    
-    // Sort matches by start position in descending order for proper replacement
-    const sortedMatches = [...results].sort((a, b) => b.start - a.start);
-    
-    sortedMatches.forEach((match, index) => {
-      const isCurrent = (sortedMatches.length - index) === currentIndex;
-      const highlightClass = isCurrent ? 'search-highlight current' : 'search-highlight';
-      const before = highlightedText.substring(0, match.start);
-      const matchText = highlightedText.substring(match.start, match.end);
-      const after = highlightedText.substring(match.end);
-      
-      highlightedText = before + `<span class="${highlightClass}">${this.escapeHtml(matchText)}</span>` + after;
-    });
+    for (let i = 0; i < sortedMatches.length; i++) {
+      const match = sortedMatches[i];
+      const isCurrent = (i + 1) === currentIndex;
 
-    backdrop.innerHTML = highlightedText;
-    
-    // Ensure scroll position stays synced after DOM update
-    requestAnimationFrame(() => {
-      backdrop.scrollTop = textarea.scrollTop;
-      backdrop.scrollLeft = textarea.scrollLeft;
-    });
+      html += this.escapeHtml(this.content.substring(lastEnd, match.start));
+
+      const cls = isCurrent ? 'search-highlight current' : 'search-highlight';
+      html += `<span class="${cls}">${this.escapeHtml(this.content.substring(match.start, match.end))}</span>`;
+
+      lastEnd = match.end;
+    }
+
+    html += this.escapeHtml(this.content.substring(lastEnd));
+
+    backdrop.innerHTML = html;
+
+    // Sync width and position after the DOM update
+    this.syncBackdropWidth();
+    this.syncScroll();
   }
 
   private scrollToResult(result: any) {
     if (!this.editorElement) return;
-    
+
     const textarea = this.editorElement.nativeElement;
-    
-    // Set selection to the current match
     textarea.setSelectionRange(result.start, result.end);
-    
-    // Calculate line position for scrolling
+
     const textBeforeSelection = textarea.value.substring(0, result.start);
     const lineNumber = (textBeforeSelection.match(/\n/g) || []).length;
-    
+
     const style = window.getComputedStyle(textarea);
     const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
     const targetScrollTop = lineNumber * lineHeight - textarea.clientHeight / 3;
-    
-    // Smooth scroll to position
+
     textarea.scrollTo({
       top: Math.max(0, targetScrollTop),
       behavior: 'smooth'
     });
-    
-    // Also sync the backdrop if it exists
-    if (this.highlightBackdrop) {
-      this.highlightBackdrop.nativeElement.scrollTop = textarea.scrollTop;
-    }
   }
 
   private clearHighlights() {

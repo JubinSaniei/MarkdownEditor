@@ -123,6 +123,18 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     }
   }
 
+  /**
+   * Clear highlights without stealing focus — used by parent when
+   * search state changes (e.g. query becomes empty).
+   */
+  clearSearchHighlights() {
+    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
+  }
+
+  /**
+   * Clear highlights and return focus — called when the user explicitly
+   * closes the search panel (Esc / X button).
+   */
   closeSearch() {
     this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
     this.previewElement?.nativeElement.focus();
