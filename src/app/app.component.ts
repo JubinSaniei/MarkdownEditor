@@ -2,6 +2,7 @@ import {
   Component, OnInit, AfterViewInit, OnDestroy,
   ViewChild, ElementRef, NgZone
 } from '@angular/core';
+import packageInfo from '../../package.json';
 import { Subscription } from 'rxjs';
 import { ElectronService } from './services/electron.service';
 import { FileService } from './services/file.service';
@@ -18,6 +19,8 @@ interface EditorTab {
   content: string;
   isDirty: boolean;
   isPreview: boolean; // temporary tab reused by single-click; promoted on dblclick or edit
+  readOnly?: boolean;
+  label?: string; // overrides display name when set
 }
 
 interface EditorGroup {
@@ -70,6 +73,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Workspace ──────────────────────────────────────────────
   title = 'Markdown Editor';
+  readonly appVersion: string = packageInfo.version;
   workspaceRoots: string[] = [];
 
   // ── Group State ────────────────────────────────────────────
@@ -412,6 +416,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     const tab = group.tabs.find(t => t.id === group.activeTabId);
     if (tab) {
+      if (tab.readOnly) return;
       tab.content = content;
       tab.isDirty = true;
       tab.isPreview = false;
@@ -487,7 +492,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   closeTab(tab: EditorTab, event?: MouseEvent) {
     if (event) event.stopPropagation();
-    if (tab.isDirty) {
+    if (tab.isDirty && !tab.readOnly) {
       const confirmed = confirm(`"${this.getTabDisplayName(tab)}" has unsaved changes. Close anyway?`);
       if (!confirmed) return;
     }
@@ -519,6 +524,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   getTabDisplayName(tab: EditorTab): string {
+    if (tab.label) return tab.label;
     return tab.filePath ? this.getFileName(tab.filePath) : 'Untitled';
   }
 
@@ -535,6 +541,41 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     };
     this.activeGroup.tabs.push(tab);
     this.activateTab(tab.id);
+  }
+
+  // ── README ────────────────────────────────────────────────
+
+  async openReadme() {
+    for (const group of this.groups) {
+      const existing = group.tabs.find(t => t.label === 'README');
+      if (existing) {
+        this.activateTab(existing.id);
+        return;
+      }
+    }
+    try {
+      const response = await fetch('assets/README.md');
+      if (!response.ok) return;
+      const content = (await response.text()).replace(/\(src\/assets\//g, '(assets/');
+      const tab: EditorTab = {
+        id: Date.now().toString(),
+        filePath: null,
+        content,
+        isDirty: false,
+        isPreview: false,
+        readOnly: true,
+        label: 'README'
+      };
+      this.activeGroup.tabs.push(tab);
+      this.activateTab(tab.id);
+      if (this.viewMode === 'edit') {
+        this.setViewMode('preview');
+      }
+    } catch (_) {}
+  }
+
+  getGroupActiveTab(group: EditorGroup): EditorTab | null {
+    return group.tabs.find(t => t.id === group.activeTabId) ?? null;
   }
 
   // ── Workspace ─────────────────────────────────────────────
@@ -604,7 +645,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async saveFile() {
     const tab = this.activeTab;
-    if (!tab) return;
+    if (!tab || tab.readOnly) return;
     if (!tab.filePath) {
       await this.saveAsFile();
       return;
@@ -620,7 +661,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async saveAsFile() {
     const tab = this.activeTab;
-    if (!tab) return;
+    if (!tab || tab.readOnly) return;
     const result = await this.electronService.saveFileAs(tab.content);
     if (result.success && result.filePath) {
       if (tab.filePath) await this.electronService.unwatchFile(tab.filePath);

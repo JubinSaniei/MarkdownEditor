@@ -8,6 +8,7 @@ import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterVie
 })
 export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   @Input() content: string = '';
+  @Input() readOnly = false;
   @Output() contentChange = new EventEmitter<string>();
   @ViewChild('editor') editorElement!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('highlightBackdrop') highlightBackdrop!: ElementRef<HTMLDivElement>;

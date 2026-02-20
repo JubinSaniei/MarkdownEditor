@@ -438,6 +438,12 @@
   line-height: 1;
 }
 
+.tab-readonly-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  opacity: .7;
+}
+
 .tab-name {
   flex: 1;
   overflow: hidden;
@@ -694,6 +700,34 @@
 .status-filepath {
   user-select: text;
   cursor: text;
+}
+
+.status-version {
+  font-size: 11px;
+  user-select: text;
+}
+
+.status-readme-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 11px;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 3px;
+  line-height: 1;
+  white-space: nowrap;
+
+  svg { opacity: .6; }
+
+  &:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+    svg { opacity: 1; }
+  }
 }
 
 .autosave-flash {

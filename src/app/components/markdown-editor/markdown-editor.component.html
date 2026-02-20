@@ -1,7 +1,7 @@
 <div class="editor-wrapper">
 
   <!-- ── Format Toolbar ──────────────────────────────────────── -->
-  <div class="format-toolbar">
+  <div class="format-toolbar" *ngIf="!readOnly">
 
     <!-- Text style -->
     <div class="fmt-group">
@@ -251,9 +251,10 @@
       <textarea
         class="markdown-editor"
         [value]="content"
+        [attr.readonly]="readOnly || null"
         (input)="onContentChange($event)"
         (keydown)="onEditorKeyDown($event)"
-        placeholder="Start typing your markdown here..."
+        [placeholder]="readOnly ? '' : 'Start typing your markdown here...'"
         #editor>
       </textarea>
     </div>

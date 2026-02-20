@@ -28,11 +28,62 @@
           <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
         </svg>
       </button>
+      <button class="hdr-btn" [class.hdr-btn-active]="searchActive" (click)="toggleSearch()" title="Search Files">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="5.5" cy="5.5" r="3.5"/>
+          <path d="M8.5 8.5L12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Search Bar ─────────────────────────────────────────────── -->
+  <div class="search-bar" *ngIf="searchActive">
+    <svg class="search-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+      <circle cx="5" cy="5" r="3.5"/>
+      <path d="M7.5 7.5L11 11"/>
+    </svg>
+    <input class="search-input"
+           type="text"
+           placeholder="Search files…"
+           [(ngModel)]="searchQuery"
+           (input)="onSearchInput()"
+           (keydown)="onSearchKeyDown($event)">
+    <button class="search-clear-btn" *ngIf="searchQuery" (click)="toggleSearch()" title="Close search">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M1 1l8 8M9 1l-8 8"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── Search Results ─────────────────────────────────────────── -->
+  <div class="search-results" *ngIf="searchActive">
+    <div class="loading-row" *ngIf="searchLoading">
+      <span class="spinner"></span>
+      <span>Searching…</span>
+    </div>
+    <div class="search-no-results" *ngIf="!searchLoading && !searchQuery">
+      Type to search files…
+    </div>
+    <div class="search-no-results" *ngIf="!searchLoading && searchQuery && searchResults.length === 0">
+      No files matching "{{ searchQuery }}"
+    </div>
+    <div *ngFor="let r of searchResults; trackBy: trackBySearchPath"
+         class="tree-row file-row search-result-row"
+         [class.selected]="selectedPath === r.path"
+         (click)="openSearchResult(r.path)"
+         (dblclick)="fileDoubleClicked.emit(r.path)"
+         [title]="r.path">
+      <svg class="file-icon md-icon" width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+        <path d="M2 1h5l3 3v8H2V1zm5 0v3h3" opacity=".85"/>
+      </svg>
+      <span class="row-name">{{ r.name }}</span>
+      <span class="row-dir">{{ getFileDir(r.path) }}</span>
     </div>
   </div>
 
   <!-- ── No Workspace State ─────────────────────────────────────── -->
-  <div class="empty-state" *ngIf="workspaces.length === 0 && recentFiles.length === 0">
+  <div class="empty-state" *ngIf="!searchActive && workspaces.length === 0 && recentFiles.length === 0">
     <svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor" opacity=".25">
       <path d="M5 8a3 3 0 013-3h9.5L20 8H35a3 3 0 013 3v20a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/>
     </svg>
@@ -40,7 +91,7 @@
     <button class="open-folder-btn" (click)="openFolder()">Add Folder</button>
   </div>
 
-  <div class="tree-scroll" *ngIf="workspaces.length > 0 || recentFiles.length > 0">
+  <div class="tree-scroll" *ngIf="!searchActive && (workspaces.length > 0 || recentFiles.length > 0)">
 
     <!-- ── Recent Files ─────────────────────────────────────────── -->
     <div class="tree-section" *ngIf="recentFiles.length > 0">

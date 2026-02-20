@@ -233,8 +233,11 @@
                (click)="activateTab(tab.id); $event.stopPropagation()"
                (dblclick)="promoteTab(tab)"
                (mouseup)="$event.button === 1 && closeTab(tab, $event)"
-               [title]="tab.filePath || 'Untitled'">
+               [title]="tab.filePath || tab.label || 'Untitled'">
             <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
+            <svg class="tab-readonly-icon" *ngIf="tab.readOnly" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+              <path d="M2 4V3a2.5 2.5 0 015 0v1h.5a.5.5 0 01.5.5v3a.5.5 0 01-.5.5h-5a.5.5 0 01-.5-.5v-3a.5.5 0 01.5-.5H2zm1 0h3V3a1.5 1.5 0 00-3 0v1z"/>
+            </svg>
             <span class="tab-name">{{ getTabDisplayName(tab) }}</span>
             <button class="tab-move"
                     *ngIf="groups[0].tabs.length > 1"
@@ -264,6 +267,7 @@
             <app-markdown-editor
               #editorLeft
               [content]="getGroupActiveContent(groups[0])"
+              [readOnly]="getGroupActiveTab(groups[0])?.readOnly === true"
               (contentChange)="onGroupContentChanged(groups[0], $event)">
             </app-markdown-editor>
           </div>
@@ -310,8 +314,11 @@
                (click)="activateTab(tab.id); $event.stopPropagation()"
                (dblclick)="promoteTab(tab)"
                (mouseup)="$event.button === 1 && closeTab(tab, $event)"
-               [title]="tab.filePath || 'Untitled'">
+               [title]="tab.filePath || tab.label || 'Untitled'">
             <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
+            <svg class="tab-readonly-icon" *ngIf="tab.readOnly" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+              <path d="M2 4V3a2.5 2.5 0 015 0v1h.5a.5.5 0 01.5.5v3a.5.5 0 01-.5.5h-5a.5.5 0 01-.5-.5v-3a.5.5 0 01.5-.5H2zm1 0h3V3a1.5 1.5 0 00-3 0v1z"/>
+            </svg>
             <span class="tab-name">{{ getTabDisplayName(tab) }}</span>
             <button class="tab-move"
                     (click)="moveTabToOtherGroup(tab, groups[1], $event)"
@@ -340,6 +347,7 @@
             <app-markdown-editor
               #editorRight
               [content]="getGroupActiveContent(groups[1])"
+              [readOnly]="getGroupActiveTab(groups[1])?.readOnly === true"
               (contentChange)="onGroupContentChanged(groups[1], $event)">
             </app-markdown-editor>
           </div>
@@ -393,6 +401,14 @@
             <path d="M3 4.5h3M4.5 3v3" stroke-width="1"/>
           </svg>
           {{ fontSize }}px
+        </button>
+        <span class="status-sep">|</span>
+        <span class="status-item status-version">v{{ appVersion }}</span>
+        <button class="status-readme-btn" (click)="openReadme()" title="Open README">
+          <svg width="11" height="11" viewBox="0 0 15 15" fill="currentColor">
+            <path d="M3.5 1A1.5 1.5 0 002 2.5v10A1.5 1.5 0 003.5 14h8a1.5 1.5 0 001.5-1.5v-10A1.5 1.5 0 0011.5 1h-8zm0 1h8a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-8a.5.5 0 01-.5-.5v-10a.5.5 0 01.5-.5zM5 4h5v1H5V4zm0 2.5h5v1H5v-1zm0 2.5h3v1H5V9z"/>
+          </svg>
+          README
         </button>
       </div>
     </footer>

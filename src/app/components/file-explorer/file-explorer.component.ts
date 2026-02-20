@@ -52,6 +52,12 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
   private clickTimer: any = null;
   recentExpanded: boolean = true;
 
+  searchActive = false;
+  searchQuery = '';
+  searchResults: Array<{ name: string; path: string }> = [];
+  searchLoading = false;
+  private searchDebounce: any = null;
+
   contextMenu: ContextMenu = { visible: false, x: 0, y: 0, node: null };
 
   constructor(
@@ -83,6 +89,7 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
   ngOnDestroy() {
     document.removeEventListener('click', this.closeContextMenuBound);
     if (this.clickTimer) clearTimeout(this.clickTimer);
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
   }
 
   // ── Tree Loading ─────────────────────────────────────────────
@@ -542,5 +549,97 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
       node.expanded = false;
       if (node.children) this.collapseNodes(node.children);
     }
+  }
+
+  // ── File Search ──────────────────────────────────────────────
+
+  toggleSearch() {
+    this.searchActive = !this.searchActive;
+    if (this.searchActive) {
+      setTimeout(() => {
+        const input = this.hostRef.nativeElement.querySelector('.search-input');
+        if (input) input.focus();
+      }, 50);
+    } else {
+      this.searchQuery = '';
+      this.searchResults = [];
+      if (this.searchDebounce) clearTimeout(this.searchDebounce);
+      this.searchLoading = false;
+    }
+  }
+
+  onSearchInput() {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    const q = this.searchQuery.trim();
+    if (!q) {
+      this.searchResults = [];
+      this.searchLoading = false;
+      return;
+    }
+    this.searchLoading = true;
+    this.searchDebounce = setTimeout(() => this.performSearch(), 250);
+  }
+
+  private async performSearch() {
+    const query = this.searchQuery.trim().toLowerCase();
+    if (!query || !this.workspaces.length) {
+      this.searchResults = [];
+      this.searchLoading = false;
+      return;
+    }
+    const results: Array<{ name: string; path: string }> = [];
+    for (const ws of this.workspaces) {
+      await this.collectMatches(ws.path, query, results);
+    }
+    this.searchResults = results;
+    this.searchLoading = false;
+    this.cdr.markForCheck();
+  }
+
+  private async collectMatches(dirPath: string, query: string, out: Array<{ name: string; path: string }>) {
+    let items: any[];
+    try {
+      items = await this.electronService.getDirectoryContents(dirPath);
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      if (item.isDirectory) {
+        await this.collectMatches(item.path, query, out);
+      } else if (this.isMarkdown(item.name) && item.name.toLowerCase().includes(query)) {
+        out.push({ name: item.name, path: item.path });
+      }
+    }
+  }
+
+  openSearchResult(path: string) {
+    this.selectedPath = path;
+    this.fileOpened.emit(path);
+  }
+
+  clearSearch() {
+    this.searchQuery = '';
+    this.searchResults = [];
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchLoading = false;
+    setTimeout(() => {
+      const input = this.hostRef.nativeElement.querySelector('.search-input');
+      if (input) input.focus();
+    }, 0);
+  }
+
+  onSearchKeyDown(event: KeyboardEvent) {
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      if (this.searchQuery) {
+        this.clearSearch();
+      } else {
+        this.toggleSearch();
+      }
+    }
+  }
+
+  trackBySearchPath(_: number, r: { name: string; path: string }): string {
+    return r.path;
   }
 }
