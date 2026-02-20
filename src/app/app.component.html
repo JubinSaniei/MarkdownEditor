@@ -10,7 +10,8 @@
       (fileDoubleClicked)="openFileAsNewTab($event)"
       (workspaceOpened)="onWorkspaceOpened($event)"
       (workspaceRemoved)="onWorkspaceRemoved($event)"
-      (recentFileOpened)="onRecentFileOpened($event)">
+      (recentFileOpened)="onRecentFileOpened($event)"
+      (recentFilesCleared)="clearRecentFiles()">
     </app-file-explorer>
   </aside>
 
@@ -286,6 +287,17 @@
         <span class="status-item" *ngIf="currentFilePath" title="Characters">{{ charCount }} chars</span>
         <span class="status-sep" *ngIf="currentFilePath">·</span>
         <span class="status-item" *ngIf="currentFilePath" title="Lines">{{ lineCount }} lines</span>
+        <span class="status-sep">|</span>
+        <button class="status-item font-size-btn"
+                (click)="resetFontSize()"
+                title="Font size: {{ fontSize }}px — Ctrl+Scroll to zoom, click to reset">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-linecap="round">
+            <circle cx="4.5" cy="4.5" r="3" stroke-width="1.2"/>
+            <path d="M7 7l2.5 2.5" stroke-width="1.3"/>
+            <path d="M3 4.5h3M4.5 3v3" stroke-width="1"/>
+          </svg>
+          {{ fontSize }}px
+        </button>
       </div>
     </footer>
 

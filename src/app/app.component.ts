@@ -65,7 +65,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── View State ────────────────────────────────────────────
   isExplorerCollapsed: boolean = false;
-  viewMode: 'preview' | 'edit' | 'split' = 'split';
+  viewMode: 'preview' | 'edit' | 'split' = 'preview';
+
+  // ── Session Restore ───────────────────────────────────────
+  private restoredTabPaths: string[] = [];
+  private restoredActiveTabPath: string | null = null;
 
   // ── Split Resize ──────────────────────────────────────────
   editorPaneWidth: number = 50;
@@ -98,6 +102,13 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Save Dropdown ─────────────────────────────────────────
   showSaveDropdown: boolean = false;
 
+  // ── Font Size ─────────────────────────────────────────────
+  fontSize: number = 13;
+  private readonly FONT_SIZE_MIN = 10;
+  private readonly FONT_SIZE_MAX = 28;
+  private readonly FONT_SIZE_DEFAULT = 13;
+  private wheelHandler!: (e: WheelEvent) => void;
+
   // ── Save Suppression (ignore own-write events from file watcher) ──
   private readonly saveSuppressionSet = new Set<string>();
 
@@ -115,7 +126,17 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     this.loadSettings();
+    this.applyFontSize();
     this.themeService.setTheme(this.themeService.getCurrentTheme());
+
+    // Ctrl+Scroll changes font size. Must be passive:false so preventDefault works.
+    this.wheelHandler = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 1 : -1;
+      this.ngZone.run(() => this.changeFontSize(delta));
+    };
+    document.addEventListener('wheel', this.wheelHandler, { passive: false });
 
     this.searchSubscription = this.searchService.searchState.subscribe(state => {
       this.searchState = state;
@@ -142,10 +163,37 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async ngAfterViewInit() {
     this.setupScrollSync();
-    const lastFile = localStorage.getItem('lastOpenedFile');
-    if (lastFile) {
-      this.openFileByPath(lastFile);
+
+    // Restore all previously open tabs (new multi-tab restore)
+    if (this.restoredTabPaths.length > 0) {
+      for (const filePath of this.restoredTabPaths) {
+        try {
+          const content = await this.fileService.readFile(filePath);
+          const tab: EditorTab = {
+            id: `${Date.now()}-${this.tabs.length}`,
+            filePath,
+            content,
+            isDirty: false,
+            isPreview: false
+          };
+          this.tabs.push(tab);
+          await this.electronService.watchFile(filePath);
+        } catch (_) {}
+      }
+      if (this.tabs.length > 0) {
+        const activeTab = this.restoredActiveTabPath
+          ? this.tabs.find(t => t.filePath === this.restoredActiveTabPath)
+          : null;
+        this.activateTab((activeTab ?? this.tabs[this.tabs.length - 1]).id);
+      }
+    } else {
+      // Fallback for sessions saved before multi-tab restore was added
+      const lastFile = localStorage.getItem('lastOpenedFile');
+      if (lastFile) {
+        this.openFileByPath(lastFile);
+      }
     }
+
     // Open a file passed via "Open with" or command-line argument at startup
     const initFile = await this.electronService.getInitialFile();
     if (initFile) {
@@ -154,6 +202,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    document.removeEventListener('wheel', this.wheelHandler);
     this.scrollSyncService.cleanup();
     if (this.searchSubscription) this.searchSubscription.unsubscribe();
     this.stopAutoSave();
@@ -407,6 +456,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.onFileOpened(filePath);
   }
 
+  clearRecentFiles() {
+    this.recentFiles = [];
+    this.saveSettings();
+  }
+
   // ── Explorer & View ───────────────────────────────────────
 
   toggleExplorer() {
@@ -455,6 +509,27 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
     document.addEventListener('mousemove', this.splitMoveHandler);
     document.addEventListener('mouseup', this.splitUpHandler);
+  }
+
+  // ── Font Size ─────────────────────────────────────────────
+
+  changeFontSize(delta: number) {
+    this.fontSize = Math.max(this.FONT_SIZE_MIN, Math.min(this.FONT_SIZE_MAX, this.fontSize + delta));
+    this.applyFontSize();
+    this.saveSettings();
+    // Re-sync the editor backdrop so the inline styles pick up the new size.
+    setTimeout(() => this.markdownEditor?.refreshBackdropStyles(), 0);
+  }
+
+  resetFontSize() {
+    this.fontSize = this.FONT_SIZE_DEFAULT;
+    this.applyFontSize();
+    this.saveSettings();
+    setTimeout(() => this.markdownEditor?.refreshBackdropStyles(), 0);
+  }
+
+  private applyFontSize() {
+    document.documentElement.style.setProperty('--editor-font-size', `${this.fontSize}px`);
   }
 
   // ── Theme ─────────────────────────────────────────────────
@@ -751,12 +826,19 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         ? s.workspaceRoots
         : (s.workspaceRoot ? [s.workspaceRoot] : []);
       this.isExplorerCollapsed = s.isExplorerCollapsed || false;
-      this.viewMode = s.viewMode || 'split';
+      this.viewMode = s.viewMode || 'preview';
       this.autoSaveEnabled = s.autoSaveEnabled || false;
       this.recentFiles = Array.isArray(s.recentFiles) ? s.recentFiles : [];
       if (typeof s.editorPaneWidth === 'number') {
         this.editorPaneWidth = Math.max(15, Math.min(85, s.editorPaneWidth));
       }
+      if (typeof s.fontSize === 'number') {
+        this.fontSize = Math.max(this.FONT_SIZE_MIN, Math.min(this.FONT_SIZE_MAX, s.fontSize));
+      }
+      this.restoredTabPaths = Array.isArray(s.tabPaths)
+        ? s.tabPaths.filter((p: any) => typeof p === 'string' && p)
+        : [];
+      this.restoredActiveTabPath = typeof s.activeTabPath === 'string' ? s.activeTabPath : null;
     } catch (_) {}
 
     if (this.autoSaveEnabled) this.startAutoSave();
@@ -770,6 +852,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       autoSaveEnabled: this.autoSaveEnabled,
       recentFiles: this.recentFiles,
       editorPaneWidth: this.editorPaneWidth,
+      fontSize: this.fontSize,
       activeTabPath: this.activeTab?.filePath ?? null,
       tabPaths: this.tabs.map(t => t.filePath).filter(Boolean)
     };

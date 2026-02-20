@@ -26,8 +26,8 @@
 
 .line-number {
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 21px;
+  font-size: var(--editor-font-size);
+  line-height: 1.615;
   color: var(--text-tertiary);
   text-align: right;
   padding-right: 10px;
@@ -59,8 +59,8 @@
 .highlight-backdrop {
   padding: 32px 24px;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 21px;
+  font-size: var(--editor-font-size);
+  line-height: 1.615;
   color: transparent;
   background: transparent;
   white-space: pre-wrap;
@@ -92,8 +92,8 @@
   outline: none;
   padding: 32px 24px;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 21px;
+  font-size: var(--editor-font-size);
+  line-height: 1.615;
   resize: none;
   background: var(--bg-secondary);
   color: var(--text-primary);

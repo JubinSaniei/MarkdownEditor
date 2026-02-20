@@ -46,6 +46,7 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
   @Output() workspaceOpened = new EventEmitter<string>();
   @Output() workspaceRemoved = new EventEmitter<string>();
   @Output() recentFileOpened = new EventEmitter<string>();
+  @Output() recentFilesCleared = new EventEmitter<void>();
 
   workspaces: RootEntry[] = [];
   private clickTimer: any = null;
@@ -176,6 +177,11 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
     }
     this.selectedPath = node.path;
     this.fileDoubleClicked.emit(node.path);
+  }
+
+  clearRecents(event: MouseEvent) {
+    event.stopPropagation();
+    this.recentFilesCleared.emit();
   }
 
   openRecentFile(filePath: string) {
@@ -311,8 +317,6 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
   // ── Create at workspace root ──────────────────────────────────
 
   startNewFileAtRoot() {
-    // When a single workspace is open the header buttons target it directly.
-    // With multiple workspaces users use the per-workspace buttons.
     if (this.workspaces.length === 1) this.startNewFileInWorkspace(this.workspaces[0]);
   }
 

@@ -1,6 +1,6 @@
 # Markdown Editor
 
-A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with tabs, multiple view modes, advanced search with replace, and resizable split panes.
+A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with tabs, multiple view modes, advanced search with replace, resizable split panes, and full session restore.
 
 ![Markdown Editor](src/assets/demo.gif)
 
@@ -12,18 +12,25 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - Middle-click or the × button to close a tab
 - Dirty state indicator (●) when a file has unsaved changes
 - `Ctrl+W` closes the active tab
+- All open tabs are restored on next launch, with the previously active tab re-selected
 
 ### View Modes
-- **Preview** — rendered markdown output
+- **Preview** — rendered markdown output (default on first launch)
 - **Edit** — focused plain-text editor with line numbers and search highlighting
 - **Split** — side-by-side editor and preview with synchronized scrolling and a draggable resizable divider
+
+### Font Size
+- `Ctrl+Scroll` anywhere in the app to increase or decrease the editor and preview font size
+- Current size is shown in the status bar (e.g. `13px`); click it to reset to the default
+- Font size is saved and restored across sessions
 
 ### File Explorer
 - Multi-root workspace: add multiple folders, each shown as a collapsible tree
 - Single-click opens a file; double-click opens it in a new permanent tab
 - Active tab's file is automatically highlighted and its parent folders expanded in the explorer
 - Rename (F2), delete, and create new files/folders inline
-- Recent files section at the top of the explorer
+- New File / New Folder buttons appear in the explorer header when exactly one workspace is open
+- Recent files section with a hover-reveal × button to clear the entire list
 
 ### Search & Replace
 - `Ctrl+F` opens the search bar; `Escape` or × closes it
@@ -39,8 +46,9 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - Auto-save (toggleable) with a "Saved" flash indicator
 - External change detection with reload/dismiss prompt
 
-### Workspace Persistence
-- Workspace roots, open tabs, active tab, view mode, split divider position, and recent files are all restored on next launch
+### Session & Window Persistence
+- Workspace roots, all open tabs, active tab, view mode, split divider position, font size, and recent files are all restored on next launch
+- Window position and size are saved on close and restored on the next launch
 
 ### Theming
 - Light and dark themes via a single toggle button
@@ -109,6 +117,7 @@ To add macOS or Linux targets, edit the `build` section in `package.json`.
 | `Ctrl+1` | Preview mode |
 | `Ctrl+2` | Edit mode |
 | `Ctrl+3` | Split mode |
+| `Ctrl+Scroll` | Increase / decrease font size |
 | `F2` | Rename selected file (explorer focused) |
 | `Delete` | Delete selected file (explorer focused) |
 

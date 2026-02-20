@@ -154,6 +154,16 @@
   &:hover { color: var(--text-secondary); }
 }
 
+.clear-recent-btn {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+
+  .section-header:hover & {
+    opacity: 1;
+  }
+}
+
 // Per-workspace section header
 .ws-section-header {
   padding-right: 6px;

@@ -111,6 +111,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  /** Re-sync backdrop text properties after an external CSS change (e.g. font-size). */
+  refreshBackdropStyles() {
+    this.syncBackdropStyles();
+    this.syncBackdropWidth();
+  }
+
   /** Clear highlights without stealing focus. */
   clearSearchHighlights() {
     this.clearHighlights();

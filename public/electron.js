@@ -6,6 +6,26 @@ const { net } = require('electron');
 
 let mainWindow;
 
+// ── Window state persistence ──────────────────────────────────
+function getWindowStatePath() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState() {
+  try {
+    const data = fsSync.readFileSync(getWindowStatePath(), 'utf-8');
+    return JSON.parse(data);
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveWindowState(win) {
+  try {
+    fsSync.writeFileSync(getWindowStatePath(), JSON.stringify(win.getBounds()), 'utf-8');
+  } catch (_) {}
+}
+
 // File watcher state
 const fileWatchers = new Map();
 const changeTimers = new Map();
@@ -52,9 +72,10 @@ async function findAngularDevServerPort() {
 }
 
 async function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1300,
-    height: 800,
+  const winState = loadWindowState();
+  const winOptions = {
+    width: winState?.width || 1300,
+    height: winState?.height || 800,
     minWidth: 800,
     minHeight: 500,
     webPreferences: {
@@ -65,7 +86,11 @@ async function createWindow() {
     icon: path.join(__dirname, '../src/assets/android-chrome-512x512.png'),
     titleBarStyle: 'default',
     show: false
-  });
+  };
+  if (winState?.x != null) winOptions.x = winState.x;
+  if (winState?.y != null) winOptions.y = winState.y;
+
+  mainWindow = new BrowserWindow(winOptions);
 
   // Show window when ready to avoid flash
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -76,6 +101,7 @@ async function createWindow() {
     try {
       const dirtyState = await mainWindow.webContents.executeJavaScript('window.__dirtyState__ || null');
       if (!dirtyState || !dirtyState.isDirty) {
+        saveWindowState(mainWindow);
         mainWindow.destroy();
         return;
       }
@@ -93,12 +119,15 @@ async function createWindow() {
         if (dirtyState.filePath && dirtyState.content !== undefined) {
           try { await fs.writeFile(dirtyState.filePath, dirtyState.content, 'utf-8'); } catch (e) {}
         }
+        saveWindowState(mainWindow);
         mainWindow.destroy();
       } else if (result.response === 1) {
+        saveWindowState(mainWindow);
         mainWindow.destroy();
       }
       // response === 2: Cancel — keep window open
     } catch (err) {
+      saveWindowState(mainWindow);
       mainWindow.destroy();
     }
   });
