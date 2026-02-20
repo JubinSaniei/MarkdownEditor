@@ -35,7 +35,7 @@
 
       <div class="tb-divider"></div>
 
-      <!-- View mode: separate buttons -->
+      <!-- View mode: separate buttons (controls active group) -->
       <div class="view-mode-group" role="group" aria-label="View mode">
         <button class="tb-btn view-btn"
                 [class.active]="viewMode === 'preview'"
@@ -123,38 +123,16 @@
 
       <!-- Theme toggle -->
       <button class="tb-btn icon-btn" (click)="toggleTheme()" [title]="isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'">
-        <!-- Sun icon: shown in dark mode, click to go light -->
         <svg *ngIf="isDarkTheme" width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
           <circle cx="7.5" cy="7.5" r="2.5"/>
           <path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.05 3.05l1.41 1.41M10.54 10.54l1.41 1.41M10.54 3.05l-1.41 1.41M4.46 10.54l-1.41 1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
         </svg>
-        <!-- Moon icon: shown in light mode, click to go dark -->
         <svg *ngIf="!isDarkTheme" width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
           <path d="M13 8A5.5 5.5 0 1 1 7 2 4.5 4.5 0 0 0 13 8z"/>
         </svg>
       </button>
 
     </header>
-
-    <!-- ── Tab Bar ──────────────────────────────────────────────── -->
-    <div class="tab-bar" *ngIf="tabs.length > 0">
-      <div class="tab"
-           *ngFor="let tab of tabs"
-           [class.active]="tab.id === activeTabId"
-           [class.preview]="tab.isPreview"
-           (click)="activateTab(tab.id)"
-           (dblclick)="promoteTab(tab)"
-           (mouseup)="$event.button === 1 && closeTab(tab, $event)"
-           [title]="tab.filePath || 'Untitled'">
-        <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
-        <span class="tab-name">{{ getTabDisplayName(tab) }}</span>
-        <button class="tab-close" (click)="closeTab(tab, $event)" title="Close">
-          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            <path d="M1 1l7 7M8 1l-7 7"/>
-          </svg>
-        </button>
-      </div>
-    </div>
 
     <!-- ── External Change Banner ────────────────────────────── -->
     <div class="change-banner" *ngIf="showExternalChangeWarning">
@@ -164,8 +142,8 @@
       <button class="banner-btn" (click)="dismissExternalChange()">Dismiss</button>
     </div>
 
-    <!-- ── Editor Area ─────────────────────────────────────────── -->
-    <div class="editor-area" #editorArea>
+    <!-- ── Editor Area (Groups Container) ──────────────────── -->
+    <div class="editor-area groups-container" #editorArea>
 
       <!-- Search/Replace overlay -->
       <div class="search-overlay" [class.visible]="searchState.isActive">
@@ -239,33 +217,151 @@
         </div>
       </div>
 
-      <!-- Editor pane -->
-      <div class="pane editor-pane"
-           *ngIf="viewMode === 'edit' || viewMode === 'split'"
-           [style.flex-basis]="viewMode === 'split' ? editorPaneWidth + '%' : null"
-           [style.flex-grow]="viewMode === 'split' ? 0 : 1">
-        <app-markdown-editor
-          #markdownEditor
-          [content]="currentFileContent"
-          (contentChange)="onContentChanged($event)">
-        </app-markdown-editor>
+      <!-- ══ LEFT GROUP (always present) ══ -->
+      <div class="group-col"
+           [class.active]="activeGroupId === groups[0].id"
+           [style.flex-basis]="groups.length > 1 ? groupSplitWidth + '%' : null"
+           [style.flex-grow]="groups.length > 1 ? 0 : 1"
+           (click)="setActiveGroup(groups[0].id)">
+
+        <!-- Left tab bar -->
+        <div class="tab-bar group-tab-bar" *ngIf="groups[0].tabs.length > 0">
+          <div class="tab"
+               *ngFor="let tab of groups[0].tabs"
+               [class.active]="tab.id === groups[0].activeTabId"
+               [class.preview]="tab.isPreview"
+               (click)="activateTab(tab.id); $event.stopPropagation()"
+               (dblclick)="promoteTab(tab)"
+               (mouseup)="$event.button === 1 && closeTab(tab, $event)"
+               [title]="tab.filePath || 'Untitled'">
+            <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
+            <span class="tab-name">{{ getTabDisplayName(tab) }}</span>
+            <button class="tab-move"
+                    *ngIf="groups[0].tabs.length > 1"
+                    (click)="moveTabToOtherGroup(tab, groups[0], $event)"
+                    [title]="groups.length > 1 ? 'Move to right pane' : 'Move to new right pane'">
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 4.5h5M5 2l2.5 2.5L5 7"/>
+              </svg>
+            </button>
+            <button class="tab-close" (click)="closeTab(tab, $event)" title="Close">
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <path d="M1 1l7 7M8 1l-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Left group content -->
+        <div class="group-content" #groupLeftContent
+             [class.split]="groups[0].viewMode === 'split'">
+
+          <!-- Editor pane -->
+          <div class="pane editor-pane"
+               *ngIf="groups[0].viewMode === 'edit' || groups[0].viewMode === 'split'"
+               [style.flex-basis]="groups[0].viewMode === 'split' ? groups[0].paneWidth + '%' : null"
+               [style.flex-grow]="groups[0].viewMode === 'split' ? 0 : 1">
+            <app-markdown-editor
+              #editorLeft
+              [content]="getGroupActiveContent(groups[0])"
+              (contentChange)="onGroupContentChanged(groups[0], $event)">
+            </app-markdown-editor>
+          </div>
+
+          <!-- Split divider (within left group) -->
+          <div class="split-divider"
+               *ngIf="groups[0].viewMode === 'split'"
+               [class.dragging]="isDraggingSplit"
+               (mousedown)="onSplitDividerMouseDown($event, 'g1')"></div>
+
+          <!-- Preview pane -->
+          <div class="pane preview-pane"
+               *ngIf="groups[0].viewMode === 'preview' || groups[0].viewMode === 'split'"
+               [style.flex-basis]="groups[0].viewMode === 'split' ? (100 - groups[0].paneWidth) + '%' : null"
+               [style.flex-grow]="groups[0].viewMode === 'split' ? 0 : 1">
+            <app-markdown-preview
+              #previewLeft
+              [content]="getGroupActiveContent(groups[0])">
+            </app-markdown-preview>
+          </div>
+
+        </div>
       </div>
 
-      <!-- Divider (split mode) -->
-      <div class="split-divider"
-           *ngIf="viewMode === 'split'"
-           [class.dragging]="isDraggingSplit"
-           (mousedown)="onSplitDividerMouseDown($event)"></div>
+      <!-- ══ DIVIDER between groups ══ -->
+      <div class="group-divider"
+           *ngIf="groups.length > 1"
+           (mousedown)="onGroupDividerMouseDown($event)"></div>
 
-      <!-- Preview pane -->
-      <div class="pane preview-pane"
-           *ngIf="viewMode === 'preview' || viewMode === 'split'"
-           [style.flex-basis]="viewMode === 'split' ? (100 - editorPaneWidth) + '%' : null"
-           [style.flex-grow]="viewMode === 'split' ? 0 : 1">
-        <app-markdown-preview
-          #markdownPreview
-          [content]="currentFileContent">
-        </app-markdown-preview>
+      <!-- ══ RIGHT GROUP (shown when groups.length > 1) ══ -->
+      <div class="group-col"
+           *ngIf="groups.length > 1"
+           [class.active]="activeGroupId === groups[1].id"
+           [style.flex-basis]="(100 - groupSplitWidth) + '%'"
+           [style.flex-grow]="0"
+           (click)="setActiveGroup(groups[1].id)">
+
+        <!-- Right tab bar -->
+        <div class="tab-bar group-tab-bar" *ngIf="groups[1].tabs.length > 0">
+          <div class="tab"
+               *ngFor="let tab of groups[1].tabs"
+               [class.active]="tab.id === groups[1].activeTabId"
+               [class.preview]="tab.isPreview"
+               (click)="activateTab(tab.id); $event.stopPropagation()"
+               (dblclick)="promoteTab(tab)"
+               (mouseup)="$event.button === 1 && closeTab(tab, $event)"
+               [title]="tab.filePath || 'Untitled'">
+            <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
+            <span class="tab-name">{{ getTabDisplayName(tab) }}</span>
+            <button class="tab-move"
+                    (click)="moveTabToOtherGroup(tab, groups[1], $event)"
+                    title="Move to left pane">
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 4.5H2M4 2L1.5 4.5 4 7"/>
+              </svg>
+            </button>
+            <button class="tab-close" (click)="closeTab(tab, $event)" title="Close">
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <path d="M1 1l7 7M8 1l-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right group content -->
+        <div class="group-content" #groupRightContent
+             [class.split]="groups[1].viewMode === 'split'">
+
+          <!-- Editor pane -->
+          <div class="pane editor-pane"
+               *ngIf="groups[1].viewMode === 'edit' || groups[1].viewMode === 'split'"
+               [style.flex-basis]="groups[1].viewMode === 'split' ? groups[1].paneWidth + '%' : null"
+               [style.flex-grow]="groups[1].viewMode === 'split' ? 0 : 1">
+            <app-markdown-editor
+              #editorRight
+              [content]="getGroupActiveContent(groups[1])"
+              (contentChange)="onGroupContentChanged(groups[1], $event)">
+            </app-markdown-editor>
+          </div>
+
+          <!-- Split divider (within right group) -->
+          <div class="split-divider"
+               *ngIf="groups[1].viewMode === 'split'"
+               [class.dragging]="isDraggingSplit"
+               (mousedown)="onSplitDividerMouseDown($event, 'g2')"></div>
+
+          <!-- Preview pane -->
+          <div class="pane preview-pane"
+               *ngIf="groups[1].viewMode === 'preview' || groups[1].viewMode === 'split'"
+               [style.flex-basis]="groups[1].viewMode === 'split' ? (100 - groups[1].paneWidth) + '%' : null"
+               [style.flex-grow]="groups[1].viewMode === 'split' ? 0 : 1">
+            <app-markdown-preview
+              #previewRight
+              [content]="getGroupActiveContent(groups[1])">
+            </app-markdown-preview>
+          </div>
+
+        </div>
       </div>
 
     </div>

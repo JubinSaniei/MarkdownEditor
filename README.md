@@ -1,10 +1,19 @@
 # Markdown Editor
 
-A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with tabs, multiple view modes, advanced search with replace, resizable split panes, and full session restore.
+A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with multi-pane editor groups, tabs, multiple view modes, advanced search with replace, resizable split panes, and full session restore.
 
 ![Markdown Editor](src/assets/demo.gif)
 
 ## Features
+
+### Editor Groups (Multi-Pane)
+- Open two independent editor panes side-by-side, each with its own tab bar and view mode
+- **Move to right pane** — hover a tab and click the `→` button to move it to a new or existing right pane (button only appears when the left group has more than one tab)
+- **Move to left pane** — hover a tab in the right pane and click the `←` button to move it back
+- Each pane can independently be in Preview, Edit, or Split mode
+- Drag the divider between the two panes to resize them
+- The right pane closes automatically when its last tab is moved or closed
+- Both groups and their open tabs are restored on next launch
 
 ### Tabs
 - **Single-click** a file to open it in a preview tab (italicized title)
@@ -18,6 +27,7 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - **Preview** — rendered markdown output (default on first launch)
 - **Edit** — focused plain-text editor with line numbers and search highlighting
 - **Split** — side-by-side editor and preview with synchronized scrolling and a draggable resizable divider
+- View mode is set per pane — the toolbar always reflects the currently focused pane
 
 ### Font Size
 - `Ctrl+Scroll` anywhere in the app to increase or decrease the editor and preview font size
@@ -47,7 +57,7 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - External change detection with reload/dismiss prompt
 
 ### Session & Window Persistence
-- Workspace roots, all open tabs, active tab, view mode, split divider position, font size, and recent files are all restored on next launch
+- Workspace roots, editor groups, all open tabs, active tab, per-pane view modes, split divider positions, font size, and recent files are all restored on next launch
 - Window position and size are saved on close and restored on the next launch
 
 ### Theming

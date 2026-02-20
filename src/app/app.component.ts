@@ -8,7 +8,7 @@ import { FileService } from './services/file.service';
 import { ThemeService } from './services/theme.service';
 import { ScrollSyncService } from './services/scroll-sync.service';
 import { SearchService } from './services/search.service';
-import { SearchState, SearchMode, SearchTarget, SearchOptions } from './interfaces/search.interface';
+import { SearchState, SearchMode, SearchOptions } from './interfaces/search.interface';
 import { MarkdownEditorComponent } from './components/markdown-editor/markdown-editor.component';
 import { MarkdownPreviewComponent } from './components/markdown-preview/markdown-preview.component';
 
@@ -20,6 +20,14 @@ interface EditorTab {
   isPreview: boolean; // temporary tab reused by single-click; promoted on dblclick or edit
 }
 
+interface EditorGroup {
+  id: string;
+  tabs: EditorTab[];
+  activeTabId: string;
+  viewMode: 'preview' | 'edit' | 'split';
+  paneWidth: number; // editor pane % width within this group's split view
+}
+
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
@@ -27,24 +35,65 @@ interface EditorTab {
   standalone: false
 })
 export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('markdownEditor') markdownEditor!: MarkdownEditorComponent;
-  @ViewChild('markdownPreview') markdownPreview!: MarkdownPreviewComponent;
-  @ViewChild('markdownEditor', { read: ElementRef }) editorContainer!: ElementRef;
-  @ViewChild('markdownPreview', { read: ElementRef }) previewContainer!: ElementRef;
+
+  // ── LEFT group ViewChildren ────────────────────────────────
+  @ViewChild('editorLeft') editorLeft?: MarkdownEditorComponent;
+  @ViewChild('editorLeft', { read: ElementRef }) editorLeftRef?: ElementRef;
+  @ViewChild('previewLeft') previewLeft?: MarkdownPreviewComponent;
+  @ViewChild('previewLeft', { read: ElementRef }) previewLeftRef?: ElementRef;
+  @ViewChild('groupLeftContent') groupLeftContentRef?: ElementRef;
+
+  // ── RIGHT group ViewChildren (optional: only when 2nd group exists) ──
+  @ViewChild('editorRight') editorRight?: MarkdownEditorComponent;
+  @ViewChild('editorRight', { read: ElementRef }) editorRightRef?: ElementRef;
+  @ViewChild('previewRight') previewRight?: MarkdownPreviewComponent;
+  @ViewChild('previewRight', { read: ElementRef }) previewRightRef?: ElementRef;
+  @ViewChild('groupRightContent') groupRightContentRef?: ElementRef;
+
   @ViewChild('searchInput') searchInputElement!: ElementRef<HTMLInputElement>;
   @ViewChild('replaceInput') replaceInputElement!: ElementRef<HTMLInputElement>;
   @ViewChild('editorArea') editorAreaRef!: ElementRef;
 
-  // ── Workspace ─────────────────────────────────────────────
+  // ── Backward-compat getters for ViewChild refs ─────────────
+  get markdownEditor(): MarkdownEditorComponent | undefined {
+    return this.activeGroupId === 'g1' ? this.editorLeft : this.editorRight;
+  }
+  get markdownPreview(): MarkdownPreviewComponent | undefined {
+    return this.activeGroupId === 'g1' ? this.previewLeft : this.previewRight;
+  }
+  get editorContainer(): ElementRef | undefined {
+    return this.activeGroupId === 'g1' ? this.editorLeftRef : this.editorRightRef;
+  }
+  get previewContainer(): ElementRef | undefined {
+    return this.activeGroupId === 'g1' ? this.previewLeftRef : this.previewRightRef;
+  }
+
+  // ── Workspace ──────────────────────────────────────────────
   title = 'Markdown Editor';
   workspaceRoots: string[] = [];
 
-  // ── Tab State ─────────────────────────────────────────────
-  tabs: EditorTab[] = [];
-  activeTabId: string = '';
+  // ── Group State ────────────────────────────────────────────
+  groups: EditorGroup[] = [
+    { id: 'g1', tabs: [], activeTabId: '', viewMode: 'preview', paneWidth: 50 }
+  ];
+  activeGroupId: string = 'g1';
+  groupSplitWidth: number = 50; // % width of left group when 2 groups are shown
+
+  // ── Backward-Compat Getters (delegate to active group) ────
+  get activeGroup(): EditorGroup {
+    return this.groups.find(g => g.id === this.activeGroupId) ?? this.groups[0];
+  }
+
+  get tabs(): EditorTab[] {
+    return this.activeGroup?.tabs ?? [];
+  }
+
+  get activeTabId(): string {
+    return this.activeGroup?.activeTabId ?? '';
+  }
 
   get activeTab(): EditorTab | null {
-    return this.tabs.find(t => t.id === this.activeTabId) ?? null;
+    return this.activeGroup?.tabs.find(t => t.id === this.activeGroup?.activeTabId) ?? null;
   }
 
   get currentFilePath(): string | null {
@@ -59,20 +108,40 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.activeTab?.content ?? '';
   }
 
+  get viewMode(): 'preview' | 'edit' | 'split' {
+    return this.activeGroup?.viewMode ?? 'preview';
+  }
+  set viewMode(mode: 'preview' | 'edit' | 'split') {
+    if (this.activeGroup) this.activeGroup.viewMode = mode;
+  }
+
+  get editorPaneWidth(): number {
+    return this.activeGroup?.paneWidth ?? 50;
+  }
+  set editorPaneWidth(v: number) {
+    if (this.activeGroup) this.activeGroup.paneWidth = v;
+  }
+
   // ── Recent Files ──────────────────────────────────────────
   recentFiles: string[] = [];
   private readonly MAX_RECENT = 5;
 
   // ── View State ────────────────────────────────────────────
   isExplorerCollapsed: boolean = false;
-  viewMode: 'preview' | 'edit' | 'split' = 'preview';
 
   // ── Session Restore ───────────────────────────────────────
-  private restoredTabPaths: string[] = [];
+  private restoredTabPaths: string[] = [];       // old single-group format
   private restoredActiveTabPath: string | null = null;
+  private restoredGroupsData: Array<{
+    id: string;
+    viewMode: 'preview' | 'edit' | 'split';
+    paneWidth: number;
+    tabPaths: string[];
+    activeTabPath: string | null;
+  }> = [];
+  private restoredActiveGroupId: string = 'g1';
 
   // ── Split Resize ──────────────────────────────────────────
-  editorPaneWidth: number = 50;
   isDraggingSplit: boolean = false;
   private splitMoveHandler!: (e: MouseEvent) => void;
   private splitUpHandler!: () => void;
@@ -109,7 +178,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly FONT_SIZE_DEFAULT = 13;
   private wheelHandler!: (e: WheelEvent) => void;
 
-  // ── Save Suppression (ignore own-write events from file watcher) ──
+  // ── Save Suppression ──────────────────────────────────────
   private readonly saveSuppressionSet = new Set<string>();
 
   // ── Subscriptions ─────────────────────────────────────────
@@ -129,7 +198,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.applyFontSize();
     this.themeService.setTheme(this.themeService.getCurrentTheme());
 
-    // Ctrl+Scroll changes font size. Must be passive:false so preventDefault works.
     this.wheelHandler = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
@@ -152,10 +220,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     });
 
-    // Open files sent by a second instance (e.g. user double-clicks another .md
-    // while the app is already running — single-instance lock forwards it here).
-    // NgZone.run() is required because ipcRenderer.on() fires outside Angular's
-    // zone, so without it Angular never detects the state change and won't re-render.
     this.electronService.onOpenFile((filePath: string) => {
       this.ngZone.run(() => this.openFileAsNewTab(filePath));
     });
@@ -164,41 +228,59 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   async ngAfterViewInit() {
     this.setupScrollSync();
 
-    // Restore all previously open tabs (new multi-tab restore)
-    if (this.restoredTabPaths.length > 0) {
+    if (this.restoredGroupsData.length > 0) {
+      // New multi-group format — groups were pre-created in loadSettings
+      for (const groupData of this.restoredGroupsData) {
+        const group = this.groups.find(g => g.id === groupData.id);
+        if (!group) continue;
+        for (const filePath of groupData.tabPaths) {
+          try {
+            const content = await this.fileService.readFile(filePath);
+            const tab: EditorTab = {
+              id: `${Date.now()}-${group.tabs.length}`,
+              filePath, content, isDirty: false, isPreview: false
+            };
+            group.tabs.push(tab);
+            await this.electronService.watchFile(filePath);
+          } catch (_) {}
+        }
+        if (group.tabs.length > 0) {
+          const activeTab = groupData.activeTabPath
+            ? group.tabs.find(t => t.filePath === groupData.activeTabPath)
+            : null;
+          group.activeTabId = (activeTab ?? group.tabs[group.tabs.length - 1]).id;
+        }
+      }
+      if (this.groups.find(g => g.id === this.restoredActiveGroupId)) {
+        this.activeGroupId = this.restoredActiveGroupId;
+      }
+    } else if (this.restoredTabPaths.length > 0) {
+      // Old single-group format migration
+      const group = this.groups[0];
       for (const filePath of this.restoredTabPaths) {
         try {
           const content = await this.fileService.readFile(filePath);
           const tab: EditorTab = {
-            id: `${Date.now()}-${this.tabs.length}`,
-            filePath,
-            content,
-            isDirty: false,
-            isPreview: false
+            id: `${Date.now()}-${group.tabs.length}`,
+            filePath, content, isDirty: false, isPreview: false
           };
-          this.tabs.push(tab);
+          group.tabs.push(tab);
           await this.electronService.watchFile(filePath);
         } catch (_) {}
       }
-      if (this.tabs.length > 0) {
+      if (group.tabs.length > 0) {
         const activeTab = this.restoredActiveTabPath
-          ? this.tabs.find(t => t.filePath === this.restoredActiveTabPath)
+          ? group.tabs.find(t => t.filePath === this.restoredActiveTabPath)
           : null;
-        this.activateTab((activeTab ?? this.tabs[this.tabs.length - 1]).id);
+        group.activeTabId = (activeTab ?? group.tabs[group.tabs.length - 1]).id;
       }
     } else {
-      // Fallback for sessions saved before multi-tab restore was added
       const lastFile = localStorage.getItem('lastOpenedFile');
-      if (lastFile) {
-        this.openFileByPath(lastFile);
-      }
+      if (lastFile) this.openFileByPath(lastFile);
     }
 
-    // Open a file passed via "Open with" or command-line argument at startup
     const initFile = await this.electronService.getInitialFile();
-    if (initFile) {
-      this.openFileAsNewTab(initFile);
-    }
+    if (initFile) this.openFileAsNewTab(initFile);
   }
 
   ngOnDestroy() {
@@ -207,8 +289,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.searchSubscription) this.searchSubscription.unsubscribe();
     this.stopAutoSave();
     this.electronService.removeFileChangedListener();
-    for (const tab of this.tabs) {
-      if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
+    for (const group of this.groups) {
+      for (const tab of group.tabs) {
+        if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
+      }
     }
     if (this.isDraggingSplit) {
       document.removeEventListener('mousemove', this.splitMoveHandler);
@@ -231,27 +315,151 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     };
   }
 
+  // ── Group Management ──────────────────────────────────────
+
+  setActiveGroup(groupId: string) {
+    if (this.activeGroupId === groupId) return;
+    this.activeGroupId = groupId;
+    this.updateSearchMode();
+    this.scrollSyncService.cleanup();
+    if (this.viewMode === 'split') {
+      setTimeout(() => this.setupScrollSync(), 100);
+    }
+  }
+
+  addGroupRight() {
+    if (this.groups.length >= 2) {
+      this.setActiveGroup('g2');
+      return;
+    }
+    this.groups.push({
+      id: 'g2',
+      tabs: [],
+      activeTabId: '',
+      viewMode: this.groups[0].viewMode,
+      paneWidth: 50
+    });
+    this.activeGroupId = 'g2';
+    this.saveSettings();
+  }
+
+  closeGroup(groupId: string) {
+    const idx = this.groups.findIndex(g => g.id === groupId);
+    if (idx === -1) return;
+    for (const tab of this.groups[idx].tabs) {
+      if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
+    }
+    this.groups.splice(idx, 1);
+    if (this.groups.length > 0) {
+      this.activeGroupId = this.groups[0].id;
+    }
+    this.saveSettings();
+  }
+
+  moveTabToOtherGroup(tab: EditorTab, sourceGroup: EditorGroup, event?: MouseEvent) {
+    if (event) event.stopPropagation();
+
+    let targetGroup: EditorGroup;
+    if (sourceGroup.id === 'g1') {
+      if (this.groups.length < 2) {
+        this.groups.push({
+          id: 'g2',
+          tabs: [],
+          activeTabId: '',
+          viewMode: sourceGroup.viewMode,
+          paneWidth: 50
+        });
+      }
+      targetGroup = this.groups[1];
+    } else {
+      targetGroup = this.groups[0];
+    }
+
+    // Remove from source
+    const idx = sourceGroup.tabs.indexOf(tab);
+    sourceGroup.tabs.splice(idx, 1);
+
+    // Add to target before any early-exit cleanup
+    targetGroup.tabs.push(tab);
+
+    // Update source active tab if needed
+    if (sourceGroup.activeTabId === tab.id) {
+      if (sourceGroup.tabs.length > 0) {
+        sourceGroup.activeTabId = sourceGroup.tabs[Math.min(idx, sourceGroup.tabs.length - 1)].id;
+      } else {
+        sourceGroup.activeTabId = '';
+        // Remove empty right group
+        if (sourceGroup.id !== 'g1') {
+          const srcIdx = this.groups.findIndex(g => g.id === sourceGroup.id);
+          if (srcIdx > 0) this.groups.splice(srcIdx, 1);
+        }
+      }
+    }
+
+    this.activateTab(tab.id);
+    this.saveSettings();
+  }
+
+  getGroupActiveContent(group: EditorGroup): string {
+    const activeTab = group.tabs.find(t => t.id === group.activeTabId);
+    return activeTab?.content ?? '';
+  }
+
+  onGroupContentChanged(group: EditorGroup, content: string) {
+    // Typing activates the group
+    if (this.activeGroupId !== group.id) {
+      this.activeGroupId = group.id;
+    }
+    const tab = group.tabs.find(t => t.id === group.activeTabId);
+    if (tab) {
+      tab.content = content;
+      tab.isDirty = true;
+      tab.isPreview = false;
+    }
+    this.updateDirtyState();
+  }
+
+  onGroupDividerMouseDown(event: MouseEvent) {
+    event.preventDefault();
+    this.isDraggingSplit = true;
+
+    const moveHandler = (e: MouseEvent) => {
+      const rect = (this.editorAreaRef.nativeElement as HTMLElement).getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      this.groupSplitWidth = Math.max(15, Math.min(85, pct));
+    };
+
+    const upHandler = () => {
+      this.isDraggingSplit = false;
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+      this.saveSettings();
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+  }
+
   // ── Tab Management ────────────────────────────────────────
 
-  // Double-click: opens a permanent tab (promotes preview if the file is already open)
   async openFileAsNewTab(filePath: string) {
     if (!filePath) return;
-    const existing = this.tabs.find(t => t.filePath === filePath);
-    if (existing) {
-      existing.isPreview = false; // promote to permanent
-      this.activateTab(existing.id);
-      return;
+    // Search all groups for existing tab
+    for (const group of this.groups) {
+      const existing = group.tabs.find(t => t.filePath === filePath);
+      if (existing) {
+        existing.isPreview = false;
+        this.activateTab(existing.id);
+        return;
+      }
     }
     try {
       const content = await this.fileService.readFile(filePath);
       const tab: EditorTab = {
         id: Date.now().toString(),
-        filePath,
-        content,
-        isDirty: false,
-        isPreview: false
+        filePath, content, isDirty: false, isPreview: false
       };
-      this.tabs.push(tab);
+      this.activeGroup.tabs.push(tab);
       this.activateTab(tab.id);
       this.addToRecentFiles(filePath);
       localStorage.setItem('lastOpenedFile', filePath);
@@ -262,7 +470,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   activateTab(tabId: string) {
-    this.activeTabId = tabId;
+    const group = this.groups.find(g => g.tabs.some(t => t.id === tabId));
+    if (group) {
+      this.activeGroupId = group.id;
+      group.activeTabId = tabId;
+    }
     this.showExternalChangeWarning = false;
     if (this.searchState.isActive) this.closeSearch();
     this.updateDirtyState();
@@ -280,19 +492,30 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       if (!confirmed) return;
     }
     if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
-    const idx = this.tabs.indexOf(tab);
-    this.tabs.splice(idx, 1);
-    if (this.activeTabId === tab.id) {
-      if (this.tabs.length > 0) {
-        const newIdx = Math.min(idx, this.tabs.length - 1);
-        this.activateTab(this.tabs[newIdx].id);
+
+    const group = this.groups.find(g => g.tabs.includes(tab));
+    if (!group) return;
+
+    const idx = group.tabs.indexOf(tab);
+    group.tabs.splice(idx, 1);
+
+    if (group.activeTabId === tab.id) {
+      if (group.tabs.length > 0) {
+        group.activeTabId = group.tabs[Math.min(idx, group.tabs.length - 1)].id;
+        if (this.activeGroupId === group.id) {
+          this.showExternalChangeWarning = false;
+          this.updateDirtyState();
+        }
       } else {
-        this.activeTabId = '';
-        this.saveSettings();
+        group.activeTabId = '';
+        // Remove empty right group
+        if (group.id !== 'g1') {
+          this.closeGroup(group.id);
+          return;
+        }
       }
-    } else {
-      this.saveSettings();
     }
+    this.saveSettings();
   }
 
   getTabDisplayName(tab: EditorTab): string {
@@ -308,12 +531,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   newFile() {
     const tab: EditorTab = {
       id: Date.now().toString(),
-      filePath: null,
-      content: '',
-      isDirty: false,
-      isPreview: false
+      filePath: null, content: '', isDirty: false, isPreview: false
     };
-    this.tabs.push(tab);
+    this.activeGroup.tabs.push(tab);
     this.activateTab(tab.id);
   }
 
@@ -333,20 +553,20 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── File Open ─────────────────────────────────────────────
 
-  // Single-click: reuse the existing preview tab, or open a new preview tab.
-  // If the file is already open in a permanent tab, just activate it.
   async onFileOpened(filePath: string) {
     if (!filePath) return;
 
-    // Already open in a permanent tab → just activate
-    const permanent = this.tabs.find(t => t.filePath === filePath && !t.isPreview);
-    if (permanent) {
-      this.activateTab(permanent.id);
-      return;
+    // Already open in a permanent tab in any group → just activate
+    for (const group of this.groups) {
+      const permanent = group.tabs.find(t => t.filePath === filePath && !t.isPreview);
+      if (permanent) {
+        this.activateTab(permanent.id);
+        return;
+      }
     }
 
-    // Already open in the preview tab → just activate (no reload needed)
-    const existingPreview = this.tabs.find(t => t.isPreview);
+    // Use active group's preview slot
+    const existingPreview = this.activeGroup.tabs.find(t => t.isPreview);
     if (existingPreview && existingPreview.filePath === filePath) {
       this.activateTab(existingPreview.id);
       return;
@@ -356,22 +576,17 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const content = await this.fileService.readFile(filePath);
 
       if (existingPreview) {
-        // Reuse the existing preview tab with the new file
         if (existingPreview.filePath) await this.electronService.unwatchFile(existingPreview.filePath);
         existingPreview.filePath = filePath;
         existingPreview.content = content;
         existingPreview.isDirty = false;
         this.activateTab(existingPreview.id);
       } else {
-        // No preview tab yet — create one
         const tab: EditorTab = {
           id: Date.now().toString(),
-          filePath,
-          content,
-          isDirty: false,
-          isPreview: true
+          filePath, content, isDirty: false, isPreview: true
         };
-        this.tabs.push(tab);
+        this.activeGroup.tabs.push(tab);
         this.activateTab(tab.id);
       }
 
@@ -383,16 +598,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async openFileByPath(filePath: string) {
     await this.openFileAsNewTab(filePath);
-  }
-
-  onContentChanged(content: string) {
-    const tab = this.activeTab;
-    if (tab) {
-      tab.content = content;
-      tab.isDirty = true;
-      tab.isPreview = false; // editing promotes the tab to permanent
-    }
-    this.updateDirtyState();
   }
 
   // ── Save ──────────────────────────────────────────────────
@@ -469,35 +674,36 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   setViewMode(mode: 'preview' | 'edit' | 'split') {
-    this.viewMode = mode;
+    this.viewMode = mode; // setter delegates to activeGroup
     if (mode === 'preview') this.isReplaceVisible = false;
     this.saveSettings();
     this.updateSearchMode();
     if (mode === 'split') {
       setTimeout(() => {
         this.setupScrollSync();
-        // ViewChild refs may not exist until after the pane *ngIf creates them
         if (this.searchState.isActive) this.applySearchHighlighting();
       }, 100);
     } else {
       this.scrollSyncService.cleanup();
-      // Re-apply highlighting after the pane switch so the new ViewChild picks it up
       if (this.searchState.isActive) {
         setTimeout(() => this.applySearchHighlighting(), 50);
       }
     }
   }
 
-  // ── Split Resize ──────────────────────────────────────────
+  // ── Split Resize (within-group editor/preview) ────────────
 
-  onSplitDividerMouseDown(event: MouseEvent) {
+  onSplitDividerMouseDown(event: MouseEvent, groupId: string) {
     event.preventDefault();
     this.isDraggingSplit = true;
+    const group = this.groups.find(g => g.id === groupId);
+    const containerRef = groupId === 'g1' ? this.groupLeftContentRef : this.groupRightContentRef;
 
     this.splitMoveHandler = (e: MouseEvent) => {
-      const rect = (this.editorAreaRef.nativeElement as HTMLElement).getBoundingClientRect();
+      if (!group || !containerRef) return;
+      const rect = (containerRef.nativeElement as HTMLElement).getBoundingClientRect();
       const pct = ((e.clientX - rect.left) / rect.width) * 100;
-      this.editorPaneWidth = Math.max(15, Math.min(85, pct));
+      group.paneWidth = Math.max(15, Math.min(85, pct));
     };
 
     this.splitUpHandler = () => {
@@ -517,7 +723,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.fontSize = Math.max(this.FONT_SIZE_MIN, Math.min(this.FONT_SIZE_MAX, this.fontSize + delta));
     this.applyFontSize();
     this.saveSettings();
-    // Re-sync the editor backdrop so the inline styles pick up the new size.
     setTimeout(() => this.markdownEditor?.refreshBackdropStyles(), 0);
   }
 
@@ -616,36 +821,26 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   onGlobalClick(event: MouseEvent) {
     const target = event.target as HTMLElement;
     if (!target.closest('.dropdown')) this.closeSaveDropdown();
-    if (!target.closest('.search-overlay') && !target.closest('.search-toggle-btn')) {
-      // Don't close search on click in editor area
-    }
   }
 
   // ── Keyboard Shortcuts ────────────────────────────────────
 
   onGlobalKeyDown(event: KeyboardEvent) {
-    // Ctrl+S: save (works everywhere including textarea)
     if (event.ctrlKey && event.key === 's') {
       event.preventDefault();
       this.saveFile();
       return;
     }
-
-    // Ctrl+N: new file
     if (event.ctrlKey && event.key === 'n') {
       event.preventDefault();
       this.newFile();
       return;
     }
-
-    // Ctrl+W: close active tab (works everywhere)
     if (event.ctrlKey && event.key === 'w') {
       event.preventDefault();
       if (this.activeTab) this.closeTab(this.activeTab);
       return;
     }
-
-    // View mode shortcuts (works everywhere)
     if (event.ctrlKey && event.key === '1') { event.preventDefault(); this.setViewMode('preview'); return; }
     if (event.ctrlKey && event.key === '2') { event.preventDefault(); this.setViewMode('edit'); return; }
     if (event.ctrlKey && event.key === '3') { event.preventDefault(); this.setViewMode('split'); return; }
@@ -734,10 +929,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   performSearch() {
     if (!this.currentFileContent) return;
-    // Always search a single target — the content is identical for both editor
-    // and preview panes. Passing two targets would double the results array,
-    // corrupting the editor backdrop (overlapping span insertions) and
-    // showing the wrong match count in the UI.
     this.searchService.performSearch([{ type: 'editor', content: this.currentFileContent }]);
   }
 
@@ -799,8 +990,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     const { query, results, currentIndex, searchMode } = this.searchState;
 
     if (!query) {
-      // Use clearSearchHighlights (not closeSearch) to avoid stealing focus
-      // and causing scroll jumps when search opens with an empty query.
       this.markdownEditor?.clearSearchHighlights();
       this.markdownPreview?.clearSearchHighlights();
       return;
@@ -821,24 +1010,49 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const raw = localStorage.getItem('markdownEditorSettings');
       if (!raw) return;
       const s = JSON.parse(raw);
-      // Support both the new array format and the old single-root format
+
       this.workspaceRoots = Array.isArray(s.workspaceRoots)
         ? s.workspaceRoots
         : (s.workspaceRoot ? [s.workspaceRoot] : []);
       this.isExplorerCollapsed = s.isExplorerCollapsed || false;
-      this.viewMode = s.viewMode || 'preview';
       this.autoSaveEnabled = s.autoSaveEnabled || false;
       this.recentFiles = Array.isArray(s.recentFiles) ? s.recentFiles : [];
-      if (typeof s.editorPaneWidth === 'number') {
-        this.editorPaneWidth = Math.max(15, Math.min(85, s.editorPaneWidth));
-      }
       if (typeof s.fontSize === 'number') {
         this.fontSize = Math.max(this.FONT_SIZE_MIN, Math.min(this.FONT_SIZE_MAX, s.fontSize));
       }
-      this.restoredTabPaths = Array.isArray(s.tabPaths)
-        ? s.tabPaths.filter((p: any) => typeof p === 'string' && p)
-        : [];
-      this.restoredActiveTabPath = typeof s.activeTabPath === 'string' ? s.activeTabPath : null;
+      if (typeof s.groupSplitWidth === 'number') {
+        this.groupSplitWidth = Math.max(15, Math.min(85, s.groupSplitWidth));
+      }
+
+      if (Array.isArray(s.groups) && s.groups.length > 0) {
+        // New multi-group format
+        this.restoredGroupsData = s.groups.map((g: any) => ({
+          id: g.id || 'g1',
+          viewMode: (['preview', 'edit', 'split'].includes(g.viewMode) ? g.viewMode : 'preview') as 'preview' | 'edit' | 'split',
+          paneWidth: typeof g.paneWidth === 'number' ? Math.max(15, Math.min(85, g.paneWidth)) : 50,
+          tabPaths: Array.isArray(g.tabPaths) ? g.tabPaths.filter((p: any) => typeof p === 'string' && p) : [],
+          activeTabPath: typeof g.activeTabPath === 'string' ? g.activeTabPath : null,
+        }));
+
+        // Pre-create groups with persisted viewMode/paneWidth
+        this.groups = [];
+        for (const gd of this.restoredGroupsData) {
+          this.groups.push({ id: gd.id, tabs: [], activeTabId: '', viewMode: gd.viewMode, paneWidth: gd.paneWidth });
+        }
+        this.restoredActiveGroupId = typeof s.activeGroupId === 'string' ? s.activeGroupId : 'g1';
+        this.activeGroupId = this.restoredActiveGroupId;
+      } else {
+        // Old single-group format migration
+        const vm = (['preview', 'edit', 'split'].includes(s.viewMode) ? s.viewMode : 'preview') as 'preview' | 'edit' | 'split';
+        this.groups[0].viewMode = vm;
+        if (typeof s.editorPaneWidth === 'number') {
+          this.groups[0].paneWidth = Math.max(15, Math.min(85, s.editorPaneWidth));
+        }
+        this.restoredTabPaths = Array.isArray(s.tabPaths)
+          ? s.tabPaths.filter((p: any) => typeof p === 'string' && p)
+          : [];
+        this.restoredActiveTabPath = typeof s.activeTabPath === 'string' ? s.activeTabPath : null;
+      }
     } catch (_) {}
 
     if (this.autoSaveEnabled) this.startAutoSave();
@@ -848,13 +1062,18 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     const s = {
       workspaceRoots: this.workspaceRoots,
       isExplorerCollapsed: this.isExplorerCollapsed,
-      viewMode: this.viewMode,
       autoSaveEnabled: this.autoSaveEnabled,
       recentFiles: this.recentFiles,
-      editorPaneWidth: this.editorPaneWidth,
       fontSize: this.fontSize,
-      activeTabPath: this.activeTab?.filePath ?? null,
-      tabPaths: this.tabs.map(t => t.filePath).filter(Boolean)
+      groupSplitWidth: this.groupSplitWidth,
+      activeGroupId: this.activeGroupId,
+      groups: this.groups.map(g => ({
+        id: g.id,
+        viewMode: g.viewMode,
+        paneWidth: g.paneWidth,
+        tabPaths: g.tabs.map(t => t.filePath).filter(Boolean),
+        activeTabPath: g.tabs.find(t => t.id === g.activeTabId)?.filePath ?? null,
+      }))
     };
     localStorage.setItem('markdownEditorSettings', JSON.stringify(s));
   }
