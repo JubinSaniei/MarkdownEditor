@@ -74,18 +74,18 @@
         "name": "Markdown File",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "src/assets/icon-617x590.png"
+        "icon": "src/assets/logo.png"
       },
       {
         "ext": "markdown",
         "name": "Markdown File",
         "description": "Markdown Document",
         "role": "Editor",
-        "icon": "src/assets/icon-617x590.png"
+        "icon": "src/assets/logo.png"
       }
     ],
     "win": {
-      "icon": "src/assets/icon-617x590.png",
+      "icon": "src/assets/logo.png",
       "target": [
         {
           "target": "portable",
