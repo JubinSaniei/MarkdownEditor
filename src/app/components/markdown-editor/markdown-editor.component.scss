@@ -7,9 +7,40 @@
 }
 
 .editor-container {
-  position: relative;
   flex: 1;
   display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+// ── Line Numbers Gutter ───────────────────────────────────────
+.line-numbers {
+  flex: 0 0 48px;
+  padding: 32px 0;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;       // scroll is driven by the textarea scroll event
+  user-select: none;
+  pointer-events: none;
+}
+
+.line-number {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-tertiary);
+  text-align: right;
+  padding-right: 10px;
+  opacity: 0.55;
+}
+
+// ── Editor Area (backdrop + textarea) ─────────────────────────
+// Provides the position:relative context for the absolute backdrop
+.editor-area {
+  flex: 1;
+  position: relative;
+  display: flex;
+  overflow: hidden;
 }
 
 // ── Search highlight backdrop ─────────────────────────────────

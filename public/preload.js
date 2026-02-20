@@ -30,5 +30,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('file-changed');
     ipcRenderer.on('file-changed', (_, filePath) => callback(filePath));
   },
-  removeFileChangedListener: () => ipcRenderer.removeAllListeners('file-changed')
+  removeFileChangedListener: () => ipcRenderer.removeAllListeners('file-changed'),
+
+  // Open-with / CLI file argument
+  getInitialFile: () => ipcRenderer.invoke('get-initial-file'),
+  onOpenFile: (callback) => {
+    ipcRenderer.removeAllListeners('open-file');
+    ipcRenderer.on('open-file', (_, filePath) => callback(filePath));
+  }
 });

@@ -1,12 +1,23 @@
 <div class="editor-wrapper">
   <div class="editor-container">
-    <div class="highlight-backdrop" #highlightBackdrop></div>
-    <textarea 
-      class="markdown-editor"
-      [value]="content"
-      (input)="onContentChange($event)"
-      placeholder="Start typing your markdown here..."
-      #editor>
-    </textarea>
+
+    <!-- Line numbers gutter -->
+    <div class="line-numbers" #lineNumbers>
+      <div class="line-number"
+           *ngFor="let n of lineNumberList; trackBy: trackByNumber">{{ n }}</div>
+    </div>
+
+    <!-- Editor area: backdrop + textarea share a position:relative context -->
+    <div class="editor-area">
+      <div class="highlight-backdrop" #highlightBackdrop></div>
+      <textarea
+        class="markdown-editor"
+        [value]="content"
+        (input)="onContentChange($event)"
+        placeholder="Start typing your markdown here..."
+        #editor>
+      </textarea>
+    </div>
+
   </div>
 </div>

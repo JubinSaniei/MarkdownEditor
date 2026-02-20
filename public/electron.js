@@ -10,6 +10,18 @@ let mainWindow;
 const fileWatchers = new Map();
 const changeTimers = new Map();
 
+// File opened via "Open with" or command-line argument
+let pendingOpenFile = null;
+
+// Extract a .md / .markdown file path from an argv array.
+// argv[0] is always the executable path in both process.argv and the
+// second-instance commandLine, so we always skip index 0.
+function getFileArgFromArgv(argv) {
+  return argv.slice(1).find(
+    a => !a.startsWith('-') && /\.(md|markdown)$/i.test(a)
+  ) || null;
+}
+
 async function checkAngularApp(port) {
   return new Promise((resolve) => {
     const request = net.request(`http://localhost:${port}`);
@@ -128,18 +140,41 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
-  await createWindow();
-});
+// ── Single-instance lock ──────────────────────────────────────
+// If another instance is already running, forward the file path to it and quit.
+const gotLock = app.requestSingleInstanceLock();
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+if (!gotLock) {
+  app.quit();
+} else {
+  // A second instance was launched — bring the existing window to front
+  // and tell the renderer to open the file.
+  app.on('second-instance', (event, commandLine) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      const filePath = getFileArgFromArgv(commandLine);
+      if (filePath && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('open-file', filePath);
+      }
+    }
+  });
 
-app.on('activate', async () => {
-  if (BrowserWindow.getAllWindows().length === 0) await createWindow();
-});
+  app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
+    // Capture file passed via "Open with" before creating the window
+    pendingOpenFile = getFileArgFromArgv(process.argv);
+    await createWindow();
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+
+  app.on('activate', async () => {
+    if (BrowserWindow.getAllWindows().length === 0) await createWindow();
+  });
+}
 
 // ============================================================
 // IPC Handlers — File Dialogs
@@ -417,4 +452,16 @@ ipcMain.handle('unwatch-file', (event, filePath) => {
     changeTimers.delete(filePath);
   }
   return true;
+});
+
+// ============================================================
+// IPC Handlers — Open With / CLI file argument
+// ============================================================
+
+// Called by the renderer on startup to retrieve any file that was passed
+// via "Open with" or a command-line argument.
+ipcMain.handle('get-initial-file', () => {
+  const file = pendingOpenFile;
+  pendingOpenFile = null;   // consume it so re-opens don't repeat
+  return file;
 });

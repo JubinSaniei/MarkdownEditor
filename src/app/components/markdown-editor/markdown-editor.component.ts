@@ -11,19 +11,29 @@ export class MarkdownEditorComponent implements AfterViewInit {
   @Output() contentChange = new EventEmitter<string>();
   @ViewChild('editor') editorElement!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('highlightBackdrop') highlightBackdrop!: ElementRef<HTMLDivElement>;
+  @ViewChild('lineNumbers') lineNumbersEl!: ElementRef<HTMLDivElement>;
+
+  get lineNumberList(): number[] {
+    const count = (this.content || '').split('\n').length;
+    return Array.from({ length: count }, (_, i) => i + 1);
+  }
+
+  trackByNumber(_: number, n: number): number { return n; }
 
 
   ngAfterViewInit() {
-    // Set up scroll synchronization between textarea and backdrop
     if (this.editorElement && this.highlightBackdrop) {
       this.editorElement.nativeElement.addEventListener('scroll', () => {
         if (this.highlightBackdrop) {
           this.highlightBackdrop.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
           this.highlightBackdrop.nativeElement.scrollLeft = this.editorElement.nativeElement.scrollLeft;
         }
+        // Keep line-number gutter in sync
+        if (this.lineNumbersEl) {
+          this.lineNumbersEl.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
+        }
       });
-      
-      // Ensure both elements have the same initial scroll position
+
       this.highlightBackdrop.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
       this.highlightBackdrop.nativeElement.scrollLeft = this.editorElement.nativeElement.scrollLeft;
     }
@@ -55,6 +65,9 @@ export class MarkdownEditorComponent implements AfterViewInit {
   scrollToTop() {
     if (this.editorElement) {
       this.editorElement.nativeElement.scrollTop = 0;
+    }
+    if (this.lineNumbersEl) {
+      this.lineNumbersEl.nativeElement.scrollTop = 0;
     }
   }
 

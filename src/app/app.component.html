@@ -172,6 +172,7 @@
           <!-- Search row -->
           <div class="sp-row">
             <button class="sp-toggle-replace"
+                    *ngIf="viewMode !== 'preview'"
                     (click)="toggleReplace()"
                     [class.open]="isReplaceVisible"
                     title="Toggle replace">
@@ -213,7 +214,7 @@
           </div>
 
           <!-- Replace row -->
-          <div class="sp-row replace-row" *ngIf="isReplaceVisible">
+          <div class="sp-row replace-row" *ngIf="isReplaceVisible && viewMode !== 'preview'">
             <div class="sp-replace-spacer"></div>
             <div class="sp-input-wrap">
               <input class="sp-input"

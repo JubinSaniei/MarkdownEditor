@@ -103,4 +103,14 @@ export class ElectronService {
   removeFileChangedListener(): void {
     if (this.isElectron) window.electronAPI.removeFileChangedListener();
   }
+
+  // --- Open With / CLI ---
+
+  async getInitialFile(): Promise<string | null> {
+    return this.isElectron ? await window.electronAPI.getInitialFile() : null;
+  }
+
+  onOpenFile(callback: (filePath: string) => void): void {
+    if (this.isElectron) window.electronAPI.onOpenFile(callback);
+  }
 }

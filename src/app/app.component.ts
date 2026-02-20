@@ -1,6 +1,6 @@
 import {
   Component, OnInit, AfterViewInit, OnDestroy,
-  ViewChild, ElementRef
+  ViewChild, ElementRef, NgZone
 } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ElectronService } from './services/electron.service';
@@ -109,7 +109,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     private fileService: FileService,
     private themeService: ThemeService,
     private scrollSyncService: ScrollSyncService,
-    private searchService: SearchService
+    private searchService: SearchService,
+    private ngZone: NgZone
   ) {}
 
   ngOnInit() {
@@ -129,13 +130,26 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         this.showExternalChangeWarning = true;
       }
     });
+
+    // Open files sent by a second instance (e.g. user double-clicks another .md
+    // while the app is already running — single-instance lock forwards it here).
+    // NgZone.run() is required because ipcRenderer.on() fires outside Angular's
+    // zone, so without it Angular never detects the state change and won't re-render.
+    this.electronService.onOpenFile((filePath: string) => {
+      this.ngZone.run(() => this.openFileAsNewTab(filePath));
+    });
   }
 
-  ngAfterViewInit() {
+  async ngAfterViewInit() {
     this.setupScrollSync();
     const lastFile = localStorage.getItem('lastOpenedFile');
     if (lastFile) {
       this.openFileByPath(lastFile);
+    }
+    // Open a file passed via "Open with" or command-line argument at startup
+    const initFile = await this.electronService.getInitialFile();
+    if (initFile) {
+      this.openFileAsNewTab(initFile);
     }
   }
 
@@ -402,12 +416,21 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   setViewMode(mode: 'preview' | 'edit' | 'split') {
     this.viewMode = mode;
+    if (mode === 'preview') this.isReplaceVisible = false;
     this.saveSettings();
     this.updateSearchMode();
     if (mode === 'split') {
-      setTimeout(() => this.setupScrollSync(), 100);
+      setTimeout(() => {
+        this.setupScrollSync();
+        // ViewChild refs may not exist until after the pane *ngIf creates them
+        if (this.searchState.isActive) this.applySearchHighlighting();
+      }, 100);
     } else {
       this.scrollSyncService.cleanup();
+      // Re-apply highlighting after the pane switch so the new ViewChild picks it up
+      if (this.searchState.isActive) {
+        setTimeout(() => this.applySearchHighlighting(), 50);
+      }
     }
   }
 
