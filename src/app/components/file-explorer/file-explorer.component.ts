@@ -1,5 +1,5 @@
 import {
-  Component, Input, Output, EventEmitter, OnChanges, SimpleChanges,
+  Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges,
   OnDestroy, HostListener, ElementRef, ChangeDetectorRef, NgZone
 } from '@angular/core';
 import { ElectronService } from '../../services/electron.service';
@@ -37,7 +37,7 @@ interface ContextMenu {
   styleUrls: ['./file-explorer.component.scss'],
   standalone: false
 })
-export class FileExplorerComponent implements OnChanges, OnDestroy {
+export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   @Input() workspaceRoots: string[] = [];
   @Input() recentFiles: string[] = [];
   @Input() selectedPath: string | null = null;
@@ -51,6 +51,7 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
   workspaces: RootEntry[] = [];
   private clickTimer: any = null;
   recentExpanded: boolean = true;
+  private watchedRoots = new Set<string>();
 
   searchActive = false;
   searchQuery = '';
@@ -67,9 +68,25 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
     private hostRef: ElementRef
   ) {}
 
+  ngOnInit() {
+    this.electronService.onDirectoryChanged((changedPath: string) => {
+      this.zone.run(() => {
+        const ws = this.workspaces.find(w => w.path === changedPath);
+        if (ws) this.smartRefreshWorkspace(ws);
+      });
+    });
+  }
+
   ngOnChanges(changes: SimpleChanges) {
     if (changes['workspaceRoots']) {
       const newRoots: string[] = this.workspaceRoots || [];
+      // Unwatch roots that were removed
+      for (const watched of this.watchedRoots) {
+        if (!newRoots.includes(watched)) {
+          this.electronService.unwatchDirectory(watched);
+          this.watchedRoots.delete(watched);
+        }
+      }
       // Remove workspaces no longer in the list
       this.workspaces = this.workspaces.filter(ws => newRoots.includes(ws.path));
       // Add workspaces that are new
@@ -90,6 +107,11 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
     document.removeEventListener('click', this.closeContextMenuBound);
     if (this.clickTimer) clearTimeout(this.clickTimer);
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.electronService.removeDirectoryChangedListener();
+    for (const dirPath of this.watchedRoots) {
+      this.electronService.unwatchDirectory(dirPath);
+    }
+    this.watchedRoots.clear();
   }
 
   // ── Tree Loading ─────────────────────────────────────────────
@@ -103,6 +125,10 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
       ws.nodes = [];
     }
     ws.loading = false;
+    if (!this.watchedRoots.has(ws.path)) {
+      this.electronService.watchDirectory(ws.path);
+      this.watchedRoots.add(ws.path);
+    }
   }
 
   private buildNodes(items: any[]): FileTreeNode[] {
@@ -142,6 +168,37 @@ export class FileExplorerComponent implements OnChanges, OnDestroy {
       const contents = await this.electronService.getDirectoryContents(node.path);
       node.children = this.buildNodes(contents);
     } catch (_) {}
+  }
+
+  private async smartRefreshWorkspace(ws: RootEntry) {
+    try {
+      const contents = await this.electronService.getDirectoryContents(ws.path);
+      ws.nodes = this.mergeNodeLists(ws.nodes, this.buildNodes(contents));
+    } catch (_) { return; }
+    await this.refreshExpandedNodes(ws.nodes);
+    this.cdr.detectChanges();
+  }
+
+  private async refreshExpandedNodes(nodes: FileTreeNode[]) {
+    for (const node of nodes) {
+      if (node.isDirectory && node.expanded && node.children !== null) {
+        try {
+          const contents = await this.electronService.getDirectoryContents(node.path);
+          node.children = this.mergeNodeLists(node.children, this.buildNodes(contents));
+          await this.refreshExpandedNodes(node.children);
+        } catch (_) {}
+      }
+    }
+  }
+
+  private mergeNodeLists(existing: FileTreeNode[], fresh: FileTreeNode[]): FileTreeNode[] {
+    return fresh.map(freshNode => {
+      const match = existing.find(n => n.path === freshNode.path);
+      if (match && freshNode.isDirectory) {
+        return { ...freshNode, expanded: match.expanded, children: match.children, loading: match.loading, isRenaming: match.isRenaming, renameValue: match.renameValue, pendingNew: match.pendingNew };
+      }
+      return freshNode;
+    });
   }
 
   // ── Workspace Management ─────────────────────────────────────

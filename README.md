@@ -42,6 +42,7 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - New File / New Folder buttons appear in the explorer header when exactly one workspace is open
 - Recent files section with a hover-reveal × button to clear the entire list
 - **Search files** — click the 🔍 button in the explorer header to enter search mode; type to filter markdown files across all workspace folders recursively; results show filename and parent path; click a result to open it; press `Escape` or click × to return to the file tree
+- **Live file system sync** — the explorer automatically detects files and folders added, removed, or renamed from outside the application (e.g. via the OS file manager, terminal, or another app); only currently expanded folders are re-queried, so the tree updates in place without collapsing
 
 ### Search & Replace
 - `Ctrl+F` opens the search bar; `Escape` or × closes it

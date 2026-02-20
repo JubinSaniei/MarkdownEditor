@@ -104,6 +104,22 @@ export class ElectronService {
     if (this.isElectron) window.electronAPI.removeFileChangedListener();
   }
 
+  async watchDirectory(dirPath: string): Promise<boolean> {
+    return this.isElectron ? await window.electronAPI.watchDirectory(dirPath) : false;
+  }
+
+  async unwatchDirectory(dirPath: string): Promise<boolean> {
+    return this.isElectron ? await window.electronAPI.unwatchDirectory(dirPath) : false;
+  }
+
+  onDirectoryChanged(callback: (dirPath: string) => void): void {
+    if (this.isElectron) window.electronAPI.onDirectoryChanged(callback);
+  }
+
+  removeDirectoryChangedListener(): void {
+    if (this.isElectron) window.electronAPI.removeDirectoryChangedListener();
+  }
+
   // --- Open With / CLI ---
 
   async getInitialFile(): Promise<string | null> {

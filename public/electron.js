@@ -30,6 +30,10 @@ function saveWindowState(win) {
 const fileWatchers = new Map();
 const changeTimers = new Map();
 
+// Directory watcher state
+const dirWatchers = new Map();
+const dirChangeTimers = new Map();
+
 // File opened via "Open with" or command-line argument
 let pendingOpenFile = null;
 
@@ -479,6 +483,40 @@ ipcMain.handle('unwatch-file', (event, filePath) => {
   if (changeTimers.has(filePath)) {
     clearTimeout(changeTimers.get(filePath));
     changeTimers.delete(filePath);
+  }
+  return true;
+});
+
+ipcMain.handle('watch-directory', (event, dirPath) => {
+  if (dirWatchers.has(dirPath)) {
+    try { dirWatchers.get(dirPath).close(); } catch (_) {}
+  }
+  try {
+    const watcher = fsSync.watch(dirPath, { recursive: true }, () => {
+      if (dirChangeTimers.has(dirPath)) clearTimeout(dirChangeTimers.get(dirPath));
+      dirChangeTimers.set(dirPath, setTimeout(() => {
+        dirChangeTimers.delete(dirPath);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('directory-changed', dirPath);
+        }
+      }, 300));
+    });
+    watcher.on('error', () => dirWatchers.delete(dirPath));
+    dirWatchers.set(dirPath, watcher);
+    return true;
+  } catch (_) {
+    return false;
+  }
+});
+
+ipcMain.handle('unwatch-directory', (event, dirPath) => {
+  if (dirWatchers.has(dirPath)) {
+    try { dirWatchers.get(dirPath).close(); } catch (_) {}
+    dirWatchers.delete(dirPath);
+  }
+  if (dirChangeTimers.has(dirPath)) {
+    clearTimeout(dirChangeTimers.get(dirPath));
+    dirChangeTimers.delete(dirPath);
   }
   return true;
 });
