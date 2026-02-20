@@ -1,4 +1,240 @@
 <div class="editor-wrapper">
+
+  <!-- ── Format Toolbar ──────────────────────────────────────── -->
+  <div class="format-toolbar">
+
+    <!-- Text style -->
+    <div class="fmt-group">
+
+      <button class="fmt-btn" (click)="fmtBold()" title="Bold (Ctrl+B)">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3h3.5a2 2 0 010 4H5V3zm0 4H9a2.5 2.5 0 010 5H5V7z" stroke-width="1.5"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtItalic()" title="Italic (Ctrl+I)">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round">
+          <path d="M9.5 3H6.5m3 9H6.5M8.5 3L6.5 12" stroke-width="1.6"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtStrike()" title="Strikethrough">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round">
+          <path d="M2.5 7.5h10" stroke-width="1.9"/>
+          <path d="M9 4.5A2.5 2 0 004.5 4.5C4.5 5.8 5.5 6.5 7.5 7.5M6 7.5C4 8.5 3.5 9.2 3.5 10.5A2.5 2 0 008 11" stroke-width="1.2"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtInlineCode()" title="Inline Code (Ctrl+\`)">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 4.5L2 7.5l3 3M10 4.5l3 3-3 3" stroke-width="1.5"/>
+          <path d="M8.5 3l-2 9" stroke-width="1.3"/>
+        </svg>
+      </button>
+
+    </div>
+
+    <div class="fmt-sep"></div>
+
+    <!-- Headings -->
+    <div class="fmt-group">
+      <button class="fmt-btn fmt-btn-label" (click)="fmtHeading(1)" title="Heading 1">H1</button>
+      <button class="fmt-btn fmt-btn-label" (click)="fmtHeading(2)" title="Heading 2">H2</button>
+      <button class="fmt-btn fmt-btn-label" (click)="fmtHeading(3)" title="Heading 3">H3</button>
+    </div>
+
+    <div class="fmt-sep"></div>
+
+    <!-- Block elements -->
+    <div class="fmt-group">
+
+      <button class="fmt-btn" (click)="fmtBlockquote()" title="Blockquote">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
+          <rect x="2" y="3" width="2.2" height="9" rx="1.1"/>
+          <path d="M6.5 5h7M6.5 8h7M6.5 11h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtCodeBlock()" title="Code Block">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.5" y="2.5" width="12" height="10" rx="1.5" stroke-width="1.3"/>
+          <path d="M4.5 5.5L2.5 7.5l2 2M10.5 5.5l2 2-2 2" stroke-width="1.3"/>
+          <path d="M7.5 11l1-7" stroke-width="1.2"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtHR()" title="Horizontal Rule">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round">
+          <path d="M2.5 5h10M2.5 10h10" stroke-width="1.2" opacity=".3"/>
+          <path d="M2.5 7.5h10" stroke-width="2.5"/>
+        </svg>
+      </button>
+
+    </div>
+
+    <div class="fmt-sep"></div>
+
+    <!-- Lists -->
+    <div class="fmt-group">
+
+      <button class="fmt-btn" (click)="fmtUnorderedList()" title="Unordered List">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
+          <circle cx="3" cy="5" r="1.2"/>
+          <circle cx="3" cy="8" r="1.2"/>
+          <circle cx="3" cy="11" r="1.2"/>
+          <path d="M6.5 5h7M6.5 8h7M6.5 11h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtOrderedList()" title="Ordered List">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <text x="1.2" y="6.2" font-size="4.8" font-weight="700" fill="currentColor">1.</text>
+          <text x="1.2" y="9.7" font-size="4.8" font-weight="700" fill="currentColor">2.</text>
+          <text x="1.2" y="13.2" font-size="4.8" font-weight="700" fill="currentColor">3.</text>
+          <path d="M7 5h7M7 8.5h7M7 12h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtTaskList()" title="Task List">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round">
+          <rect x="1.5" y="5.5" width="4" height="4" rx=".8" stroke-width="1.2"/>
+          <path d="M2.5 7.5l1 1 2-2" stroke-width="1.1" stroke-linejoin="round"/>
+          <path d="M7.5 4h6.5M7.5 7.5h6.5M7.5 11h5" stroke-width="1.3"/>
+        </svg>
+      </button>
+
+    </div>
+
+    <div class="fmt-sep"></div>
+
+    <!-- Inserts -->
+    <div class="fmt-group">
+
+      <button class="fmt-btn" (click)="fmtLink()" title="Link (Ctrl+K)">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4">
+          <path d="M6.5 9a3 3 0 004.2 0l1.5-1.5a3 3 0 00-4.2-4.2L6.5 4.5"/>
+          <path d="M8.5 6a3 3 0 00-4.2 0L3 7.5a3 3 0 004.2 4.2L8.5 10.5"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtImage()" title="Image">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.5" y="2.5" width="12" height="10" rx="1.5" stroke-width="1.3"/>
+          <circle cx="5" cy="5.5" r="1.2" fill="currentColor" stroke="none"/>
+          <path d="M1.5 10.5l3.5-3.5 2.5 2.5 2-2 3.5 3.5" stroke-width="1.3"/>
+        </svg>
+      </button>
+
+      <button class="fmt-btn" (click)="fmtTable()" title="Table">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor">
+          <rect x="1.5" y="2.5" width="12" height="10" rx="1" stroke-width="1.3"/>
+          <path d="M1.5 6.5h12M6.5 2.5v10" stroke-width="1.2"/>
+        </svg>
+      </button>
+
+    </div>
+
+    <!-- Spacer pushes cheat-sheet button to the far right -->
+    <div class="fmt-spacer"></div>
+
+    <!-- Cheat sheet toggle -->
+    <button class="fmt-btn" (click)="toggleCheatsheet()" #cheatsheetBtn
+            [class.fmt-btn-active]="showCheatsheet" title="Markdown cheat sheet">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor"
+           stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3">
+        <rect x="2.5" y="1.5" width="10" height="12" rx="1.2"/>
+        <path d="M5 5h5M5 7.5h5M5 10h3"/>
+      </svg>
+    </button>
+
+  </div>
+
+  <!-- ── Cheat Sheet Panel ──────────────────────────────────────── -->
+  <div class="cheatsheet-panel" *ngIf="showCheatsheet" #cheatsheetPanel>
+    <div class="cs-header">
+      <span>Markdown Reference</span>
+      <button class="cs-close" (click)="showCheatsheet = false" title="Close">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round">
+          <path d="M2 2l8 8M10 2l-8 8"/>
+        </svg>
+      </button>
+    </div>
+    <div class="cs-body">
+
+      <div class="cs-section">Text Formatting</div>
+      <div class="cs-row"><code>**bold**</code><span><strong>bold</strong></span></div>
+      <div class="cs-row"><code>*italic*</code><span><em>italic</em></span></div>
+      <div class="cs-row"><code>***bold italic***</code><span><strong><em>bold italic</em></strong></span></div>
+      <div class="cs-row"><code>~~strike~~</code><span class="cs-strike">strike</span></div>
+      <div class="cs-row"><code>`inline code`</code><span class="cs-code">inline code</span></div>
+      <div class="cs-row"><code>==highlight==</code><span class="cs-highlight">highlight</span></div>
+      <div class="cs-row"><code>X^2^</code><span>X<sup>2</sup></span></div>
+      <div class="cs-row"><code>H~2~O</code><span>H<sub>2</sub>O</span></div>
+      <div class="cs-row"><code>\*escape\*</code><span>*escape*</span></div>
+
+      <div class="cs-section">Headings</div>
+      <div class="cs-row"><code># H1</code><span class="cs-h cs-h1">H1</span></div>
+      <div class="cs-row"><code>## H2</code><span class="cs-h cs-h2">H2</span></div>
+      <div class="cs-row"><code>### H3</code><span class="cs-h cs-h3">H3</span></div>
+      <div class="cs-row"><code>#### H4</code><span class="cs-h cs-h4">H4</span></div>
+      <div class="cs-row"><code>##### H5</code><span class="cs-h cs-h5">H5</span></div>
+      <div class="cs-row"><code>###### H6</code><span class="cs-h cs-h6">H6</span></div>
+      <div class="cs-row cs-row-full"><code>Heading<br>======</code><span>Alt H1</span></div>
+      <div class="cs-row cs-row-full"><code>Heading<br>------</code><span>Alt H2</span></div>
+
+      <div class="cs-section">Links &amp; Images</div>
+      <div class="cs-row"><code>[text](url)</code><span class="cs-link">text</span></div>
+      <div class="cs-row"><code>[text](url "tip")</code><span class="cs-link" title="tip">text + title</span></div>
+      <div class="cs-row"><code>[ref][id]</code><span class="cs-link">reference link</span></div>
+      <div class="cs-row cs-row-full"><code>[id]: url "title"</code><span>link definition</span></div>
+      <div class="cs-row"><code>&lt;https://url&gt;</code><span class="cs-link">auto-link</span></div>
+      <div class="cs-row"><code>&lt;email&#64;host&gt;</code><span class="cs-link">email link</span></div>
+      <div class="cs-row"><code>![alt](url)</code><span>image embed</span></div>
+      <div class="cs-row"><code>![alt](url "tip")</code><span>image + title</span></div>
+
+      <div class="cs-section">Lists</div>
+      <div class="cs-row"><code>- item</code><span>• unordered</span></div>
+      <div class="cs-row"><code>* item</code><span>• unordered (alt)</span></div>
+      <div class="cs-row"><code>+ item</code><span>• unordered (alt)</span></div>
+      <div class="cs-row"><code>1. item</code><span>1. ordered</span></div>
+      <div class="cs-row"><code>- [ ] task</code><span>☐ task list</span></div>
+      <div class="cs-row"><code>- [x] done</code><span>☑ checked</span></div>
+      <div class="cs-row cs-row-full"><code>··- nested</code><span>2-space indent = nested</span></div>
+
+      <div class="cs-section">Blocks</div>
+      <div class="cs-row"><code>&gt; text</code><span class="cs-blockquote">blockquote</span></div>
+      <div class="cs-row cs-row-full"><code>&gt; &gt; nested</code><span class="cs-blockquote">nested quote</span></div>
+      <div class="cs-row cs-row-full"><code>```lang<br>code<br>```</code><span>fenced code block</span></div>
+      <div class="cs-row cs-row-full"><code>····indented code</code><span>4-space code block</span></div>
+      <div class="cs-row"><code>---</code><span>horizontal rule</span></div>
+      <div class="cs-row"><code>***</code><span>horizontal rule (alt)</span></div>
+      <div class="cs-row cs-row-full"><code>line··<br>(two spaces)</code><span>line break</span></div>
+      <div class="cs-row cs-row-full"><code>&lt;br&gt;</code><span>explicit line break</span></div>
+
+      <div class="cs-section">Table</div>
+      <div class="cs-row-block">
+        <code>| Left | Center | Right |<br>| :--- | :----: | ----: |<br>| cell |  cell  |  cell |</code>
+      </div>
+      <div class="cs-row cs-row-full"><code>:---</code><span>left-align column</span></div>
+      <div class="cs-row cs-row-full"><code>:---:</code><span>center-align column</span></div>
+      <div class="cs-row cs-row-full"><code>---:</code><span>right-align column</span></div>
+
+      <div class="cs-section">Footnotes</div>
+      <div class="cs-row cs-row-full"><code>text[^1]</code><span>footnote reference</span></div>
+      <div class="cs-row-block">
+        <code>[^1]: footnote text</code>
+      </div>
+
+      <div class="cs-section">Miscellaneous</div>
+      <div class="cs-row cs-row-full"><code>&lt;!-- comment --&gt;</code><span>HTML comment</span></div>
+      <div class="cs-row cs-row-full"><code>&amp;nbsp;</code><span>non-breaking space</span></div>
+      <div class="cs-row cs-row-full"><code>&amp;copy; &amp;amp; &amp;lt;</code><span>HTML entities</span></div>
+
+    </div>
+  </div>
+
+  <!-- ── Editor ───────────────────────────────────────────────── -->
   <div class="editor-container">
 
     <!-- Line numbers gutter -->
@@ -16,6 +252,7 @@
         class="markdown-editor"
         [value]="content"
         (input)="onContentChange($event)"
+        (keydown)="onEditorKeyDown($event)"
         placeholder="Start typing your markdown here..."
         #editor>
       </textarea>
