@@ -1,4 +1,10 @@
-<div class="app-shell" [class.split-dragging]="isDraggingSplit" (click)="onGlobalClick($event)" (keydown)="onGlobalKeyDown($event)">
+<div class="app-shell" [class.split-dragging]="isDraggingSplit"
+     (click)="onGlobalClick($event)"
+     (keydown)="onGlobalKeyDown($event)"
+     (dragenter)="onDragEnter($event)"
+     (dragover)="onDragOver($event)"
+     (dragleave)="onDragLeave($event)"
+     (drop)="onDrop($event)">
 
   <!-- ── Sidebar ───────────────────────────────────────────── -->
   <aside class="sidebar" [class.collapsed]="isExplorerCollapsed">
@@ -414,4 +420,17 @@
     </footer>
 
   </div>
+
+  <!-- ── Drop Overlay ───────────────────────────────────────── -->
+  <div class="drop-overlay" *ngIf="isDraggingFile">
+    <div class="drop-overlay-inner">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M28 4H12a4 4 0 00-4 4v32a4 4 0 004 4h24a4 4 0 004-4V20L28 4z"/>
+        <path d="M28 4v16h16"/>
+        <path d="M24 28v8M20 32l4 4 4-4"/>
+      </svg>
+      <span>Drop to open</span>
+    </div>
+  </div>
+
 </div>

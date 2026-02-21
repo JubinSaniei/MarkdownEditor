@@ -5,6 +5,7 @@ import {
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import { ElectronService } from '../../services/electron.service';
 
 @Component({
   selector: 'app-markdown-preview',
@@ -31,14 +32,47 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     }
   };
 
-  constructor(private sanitizer: DomSanitizer) {
+  private anchorClickHandler = (event: Event) => {
+    const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') || '';
+
+    if (href.startsWith('#')) {
+      event.preventDefault();
+      const target = this.previewElement?.nativeElement.querySelector(
+        '#' + CSS.escape(href.slice(1))
+      ) as HTMLElement | null;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (href.startsWith('http://') || href.startsWith('https://')) {
+      event.preventDefault();
+      this.electronService.openExternal(href);
+    }
+  };
+
+  constructor(
+    private sanitizer: DomSanitizer,
+    private electronService: ElectronService
+  ) {
     this.configureMarked();
+  }
+
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')   // strip punctuation except hyphens
+      .trim()
+      .replace(/\s+/g, '-');      // spaces → hyphens
   }
 
   private configureMarked() {
     marked.use({ gfm: true, breaks: true, pedantic: false });
 
     const renderer = new marked.Renderer();
+
+    renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
+      const id = this.slugify(text.replace(/<[^>]+>/g, '')); // strip any inner HTML tags before slugging
+      return `<h${depth} id="${id}">${text}</h${depth}>\n`;
+    };
 
     renderer.code = ({ text, lang }: { text: string; lang?: string; escaped?: boolean }) => {
       const codeId = 'code-' + Math.random().toString(36).substr(2, 9);
@@ -89,8 +123,10 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   }
 
   ngOnDestroy() {
-    if (this.previewElement?.nativeElement) {
-      this.previewElement.nativeElement.removeEventListener('click', this.copyClickHandler);
+    const el = this.previewElement?.nativeElement;
+    if (el) {
+      el.removeEventListener('click', this.copyClickHandler);
+      el.removeEventListener('click', this.anchorClickHandler);
     }
   }
 
@@ -99,6 +135,8 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     if (!el) return;
     el.removeEventListener('click', this.copyClickHandler);
     el.addEventListener('click', this.copyClickHandler);
+    el.removeEventListener('click', this.anchorClickHandler);
+    el.addEventListener('click', this.anchorClickHandler);
   }
 
   // ── Search Highlighting ──────────────────────────────────────

@@ -182,6 +182,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly FONT_SIZE_DEFAULT = 13;
   private wheelHandler!: (e: WheelEvent) => void;
 
+  // ── Drag-and-Drop ─────────────────────────────────────────
+  isDraggingFile: boolean = false;
+  private dragCounter: number = 0;
+
   // ── Save Suppression ──────────────────────────────────────
   private readonly saveSuppressionSet = new Set<string>();
 
@@ -862,6 +866,44 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   onGlobalClick(event: MouseEvent) {
     const target = event.target as HTMLElement;
     if (!target.closest('.dropdown')) this.closeSaveDropdown();
+  }
+
+  onDragEnter(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragCounter++;
+    if (event.dataTransfer?.types.includes('Files')) {
+      this.isDraggingFile = true;
+    }
+  }
+
+  onDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  }
+
+  onDragLeave(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragCounter--;
+    if (this.dragCounter <= 0) {
+      this.dragCounter = 0;
+      this.isDraggingFile = false;
+    }
+  }
+
+  onDrop(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragCounter = 0;
+    this.isDraggingFile = false;
+    if (!event.dataTransfer?.files.length) return;
+    for (const file of Array.from(event.dataTransfer.files)) {
+      if (!file.name.toLowerCase().endsWith('.md')) continue;
+      const filePath = this.electronService.getPathForFile(file);
+      if (filePath) this.openFileAsNewTab(filePath);
+    }
   }
 
   // ── Keyboard Shortcuts ────────────────────────────────────

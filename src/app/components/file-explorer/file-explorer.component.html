@@ -95,7 +95,7 @@
 
     <!-- ── Recent Files ─────────────────────────────────────────── -->
     <div class="tree-section" *ngIf="recentFiles.length > 0">
-      <div class="section-header" (click)="recentExpanded = !recentExpanded">
+      <div class="section-header" (click)="toggleRecentExpanded()">
         <svg class="section-arrow" [class.open]="recentExpanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
           <path d="M2 1l4 3.5L2 8"/>
         </svg>
@@ -126,7 +126,7 @@
     <!-- ── Workspace Trees ──────────────────────────────────────── -->
     <div class="tree-section" *ngFor="let ws of workspaces; trackBy: trackByWorkspacePath">
 
-      <div class="section-header ws-section-header" (click)="ws.expanded = !ws.expanded">
+      <div class="section-header ws-section-header" (click)="toggleWorkspaceExpanded(ws)">
         <svg class="section-arrow" [class.open]="ws.expanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
           <path d="M2 1l4 3.5L2 8"/>
         </svg>

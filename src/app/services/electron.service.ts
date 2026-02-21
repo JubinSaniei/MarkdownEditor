@@ -129,4 +129,13 @@ export class ElectronService {
   onOpenFile(callback: (filePath: string) => void): void {
     if (this.isElectron) window.electronAPI.onOpenFile(callback);
   }
+
+  getPathForFile(file: File): string {
+    return this.isElectron ? window.electronAPI.getPathForFile(file) : '';
+  }
+
+  openExternal(url: string): void {
+    if (this.isElectron) window.electronAPI.openExternal(url);
+    else window.open(url, '_blank');
+  }
 }

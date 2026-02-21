@@ -52,6 +52,9 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   private clickTimer: any = null;
   recentExpanded: boolean = true;
   private watchedRoots = new Set<string>();
+  private savedExplorerState: any = null;
+
+  private readonly EXPLORER_STATE_KEY = 'explorerState';
 
   searchActive = false;
   searchQuery = '';
@@ -69,6 +72,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   ) {}
 
   ngOnInit() {
+    this.loadExplorerState();
     this.electronService.onDirectoryChanged((changedPath: string) => {
       this.zone.run(() => {
         const ws = this.workspaces.find(w => w.path === changedPath);
@@ -129,6 +133,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
       this.electronService.watchDirectory(ws.path);
       this.watchedRoots.add(ws.path);
     }
+    await this.applyWorkspaceSavedState(ws);
   }
 
   private buildNodes(items: any[]): FileTreeNode[] {
@@ -160,6 +165,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
       node.loading = false;
     }
     node.expanded = !node.expanded;
+    this.saveExplorerState();
   }
 
   async refreshNode(node: FileTreeNode) {
@@ -596,15 +602,117 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   collapseAll() {
-    for (const ws of this.workspaces) {
-      this.collapseNodes(ws.nodes);
+    const anyFolderExpanded = this.workspaces.some(
+      ws => ws.expanded && this.hasExpandedNode(ws.nodes)
+    );
+
+    if (anyFolderExpanded) {
+      // Stage 1: collapse all folder nodes, keep workspace headers open
+      for (const ws of this.workspaces) {
+        this.collapseNodes(ws.nodes);
+      }
+    } else {
+      // Stage 2: collapse workspace headers and recent section
+      for (const ws of this.workspaces) {
+        ws.expanded = false;
+      }
+      this.recentExpanded = false;
     }
+    this.saveExplorerState();
+  }
+
+  private hasExpandedNode(nodes: FileTreeNode[]): boolean {
+    for (const node of nodes) {
+      if (node.isDirectory && node.expanded) return true;
+      if (node.children && this.hasExpandedNode(node.children)) return true;
+    }
+    return false;
   }
 
   private collapseNodes(nodes: FileTreeNode[]) {
     for (const node of nodes) {
       node.expanded = false;
       if (node.children) this.collapseNodes(node.children);
+    }
+  }
+
+  toggleRecentExpanded() {
+    this.recentExpanded = !this.recentExpanded;
+    this.saveExplorerState();
+  }
+
+  toggleWorkspaceExpanded(ws: RootEntry) {
+    ws.expanded = !ws.expanded;
+    this.saveExplorerState();
+  }
+
+  // ── Explorer State Persistence ───────────────────────────────
+
+  private loadExplorerState() {
+    try {
+      const raw = localStorage.getItem(this.EXPLORER_STATE_KEY);
+      this.savedExplorerState = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      this.savedExplorerState = null;
+    }
+    if (this.savedExplorerState?.recentExpanded !== undefined) {
+      this.recentExpanded = this.savedExplorerState.recentExpanded;
+    }
+  }
+
+  private saveExplorerState() {
+    const state: any = {
+      recentExpanded: this.recentExpanded,
+      workspaces: {} as Record<string, { expanded: boolean; expandedPaths: string[] }>
+    };
+    for (const ws of this.workspaces) {
+      const expandedPaths: string[] = [];
+      this.collectExpandedPaths(ws.nodes, expandedPaths);
+      state.workspaces[ws.path] = { expanded: ws.expanded, expandedPaths };
+    }
+    try {
+      localStorage.setItem(this.EXPLORER_STATE_KEY, JSON.stringify(state));
+    } catch (_) {}
+  }
+
+  private collectExpandedPaths(nodes: FileTreeNode[], out: string[]) {
+    for (const node of nodes) {
+      if (node.isDirectory && node.expanded) {
+        out.push(node.path);
+        if (node.children) this.collectExpandedPaths(node.children, out);
+      }
+    }
+  }
+
+  private async applyWorkspaceSavedState(ws: RootEntry) {
+    const wsState = this.savedExplorerState?.workspaces?.[ws.path];
+    if (!wsState) return;
+
+    ws.expanded = wsState.expanded ?? true;
+
+    if (ws.expanded && wsState.expandedPaths?.length > 0) {
+      const expandedSet = new Set<string>(wsState.expandedPaths as string[]);
+      await this.restoreNodeExpansion(ws.nodes, expandedSet);
+    }
+  }
+
+  private async restoreNodeExpansion(nodes: FileTreeNode[], expandedPaths: Set<string>) {
+    for (const node of nodes) {
+      if (!node.isDirectory || !expandedPaths.has(node.path)) continue;
+      if (node.children === null) {
+        node.loading = true;
+        try {
+          const contents = await this.electronService.getDirectoryContents(node.path);
+          node.children = this.buildNodes(contents);
+        } catch (_) {
+          node.children = [];
+        }
+        node.loading = false;
+      }
+      node.expanded = true;
+      if (node.children) {
+        await this.restoreNodeExpansion(node.children, expandedPaths);
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -519,6 +519,19 @@ ipcMain.handle('unwatch-directory', (event, dirPath) => {
     dirChangeTimers.delete(dirPath);
   }
   return true;
+});
+
+// ============================================================
+// IPC Handlers — Shell
+// ============================================================
+
+ipcMain.handle('open-external', async (event, url) => {
+  try {
+    await shell.openExternal(url);
+    return true;
+  } catch (_) {
+    return false;
+  }
 });
 
 // ============================================================
