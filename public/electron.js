@@ -11,18 +11,18 @@ function getWindowStatePath() {
   return path.join(app.getPath('userData'), 'window-state.json');
 }
 
-function loadWindowState() {
+async function loadWindowState() {
   try {
-    const data = fsSync.readFileSync(getWindowStatePath(), 'utf-8');
+    const data = await fs.readFile(getWindowStatePath(), 'utf-8');
     return JSON.parse(data);
   } catch (_) {
     return null;
   }
 }
 
-function saveWindowState(win) {
+async function saveWindowState(win) {
   try {
-    fsSync.writeFileSync(getWindowStatePath(), JSON.stringify(win.getBounds()), 'utf-8');
+    await fs.writeFile(getWindowStatePath(), JSON.stringify(win.getBounds()), 'utf-8');
   } catch (_) {}
 }
 
@@ -40,22 +40,24 @@ const activeStreams = new Map(); // requestId -> AbortController
 function getAiKeysPath() {
   return path.join(app.getPath('userData'), 'ai-keys.json');
 }
-function loadAiKeys() {
-  try { return JSON.parse(fsSync.readFileSync(getAiKeysPath(), 'utf-8')); }
+async function loadAiKeys() {
+  try { return JSON.parse(await fs.readFile(getAiKeysPath(), 'utf-8')); }
   catch (_) { return {}; }
 }
-function saveAiKeys(keys) {
-  fsSync.writeFileSync(getAiKeysPath(), JSON.stringify(keys), 'utf-8');
+async function saveAiKeys(keys) {
+  await fs.writeFile(getAiKeysPath(), JSON.stringify(keys), 'utf-8');
 }
 const AI_ENV_VARS = { openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY' };
 
 async function getDecryptedKey(provider) {
   // Priority 1: safeStorage key (user-saved key takes precedence over env var)
   if (safeStorage.isEncryptionAvailable()) {
-    const keys = loadAiKeys();
+    const keys = await loadAiKeys();
     if (keys[provider]) {
       try { return safeStorage.decryptString(Buffer.from(keys[provider], 'base64')); }
-      catch (_) {}
+      catch (err) {
+        console.warn(`Failed to decrypt ${provider} key from safeStorage:`, err.message);
+      }
     }
   }
   // Priority 2: environment variable fallback (cross-platform)
@@ -97,14 +99,18 @@ async function checkAngularApp(port) {
 
 async function findAngularDevServerPort() {
   const commonPorts = [4200, 4201, 4202, 4203, 4204, 4205, 4250];
-  for (const port of commonPorts) {
-    if (await checkAngularApp(port)) return port;
+  try {
+    const port = await Promise.any(
+      commonPorts.map(p => checkAngularApp(p).then(ok => ok ? p : Promise.reject()))
+    );
+    return port;
+  } catch (_) {
+    return 4200;
   }
-  return 4200;
 }
 
 async function createWindow() {
-  const winState = loadWindowState();
+  const winState = await loadWindowState();
   const winOptions = {
     width: winState?.width || 1300,
     height: winState?.height || 800,
@@ -113,6 +119,7 @@ async function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../src/assets/android-chrome-512x512.png'),
@@ -127,13 +134,23 @@ async function createWindow() {
   // Show window when ready to avoid flash
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
-  // Unsaved changes handler on close
+  // Clean up watchers and timers when window is about to close
   mainWindow.on('close', async (event) => {
+    // Clean up file watchers
+    for (const w of fileWatchers.values()) try { w.close(); } catch (_) {}
+    for (const w of dirWatchers.values()) try { w.close(); } catch (_) {}
+    for (const t of changeTimers.values()) clearTimeout(t);
+    for (const t of dirChangeTimers.values()) clearTimeout(t);
+    fileWatchers.clear();
+    dirWatchers.clear();
+    changeTimers.clear();
+    dirChangeTimers.clear();
+
     event.preventDefault();
     try {
       const dirtyState = await mainWindow.webContents.executeJavaScript('window.__dirtyState__ || null');
       if (!dirtyState || !dirtyState.isDirty) {
-        saveWindowState(mainWindow);
+        await saveWindowState(mainWindow);
         mainWindow.destroy();
         return;
       }
@@ -149,17 +166,23 @@ async function createWindow() {
       });
       if (result.response === 0) {
         if (dirtyState.filePath && dirtyState.content !== undefined) {
-          try { await fs.writeFile(dirtyState.filePath, dirtyState.content, 'utf-8'); } catch (e) {}
+          try {
+            await fs.writeFile(dirtyState.filePath, dirtyState.content, 'utf-8');
+          } catch (e) {
+            console.error('Failed to save file on close:', e);
+            dialog.showErrorBox('Save Failed', `Could not save "${fileName}":\n${e.message}`);
+          }
         }
-        saveWindowState(mainWindow);
+        await saveWindowState(mainWindow);
         mainWindow.destroy();
       } else if (result.response === 1) {
-        saveWindowState(mainWindow);
+        await saveWindowState(mainWindow);
         mainWindow.destroy();
       }
       // response === 2: Cancel — keep window open
     } catch (err) {
-      saveWindowState(mainWindow);
+      console.error('Error during window close:', err);
+      await saveWindowState(mainWindow);
       mainWindow.destroy();
     }
   });
@@ -226,6 +249,11 @@ if (!gotLock) {
     // Capture file passed via "Open with" before creating the window
     pendingOpenFile = getFileArgFromArgv(process.argv);
     await createWindow();
+  });
+
+  app.on('before-quit', () => {
+    for (const ac of activeStreams.values()) try { ac.abort(); } catch (_) {}
+    activeStreams.clear();
   });
 
   app.on('window-all-closed', () => {
@@ -393,15 +421,10 @@ ipcMain.handle('create-new-file', async (event, defaultPath) => {
 
 ipcMain.handle('create-file-at-path', async (event, filePath, content = '') => {
   try {
-    // Check file doesn't already exist
-    try {
-      await fs.access(filePath);
-      return { success: false, error: 'File already exists' };
-    } catch (_) { /* file doesn't exist, good */ }
-
-    await fs.writeFile(filePath, content, 'utf-8');
+    await fs.writeFile(filePath, content, { flag: 'wx', encoding: 'utf-8' });
     return { success: true, filePath };
   } catch (error) {
+    if (error.code === 'EEXIST') return { success: false, error: 'File already exists' };
     return { success: false, error: error.message };
   }
 });
@@ -491,11 +514,17 @@ ipcMain.handle('watch-file', (event, filePath) => {
       changeTimers.set(filePath, setTimeout(() => {
         changeTimers.delete(filePath);
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('file-changed', filePath);
+          try { mainWindow.webContents.send('file-changed', filePath); } catch (_) {}
         }
       }, 500));
     });
-    watcher.on('error', () => fileWatchers.delete(filePath));
+    watcher.on('error', () => {
+      fileWatchers.delete(filePath);
+      if (changeTimers.has(filePath)) {
+        clearTimeout(changeTimers.get(filePath));
+        changeTimers.delete(filePath);
+      }
+    });
     fileWatchers.set(filePath, watcher);
     return true;
   } catch (_) {
@@ -525,11 +554,17 @@ ipcMain.handle('watch-directory', (event, dirPath) => {
       dirChangeTimers.set(dirPath, setTimeout(() => {
         dirChangeTimers.delete(dirPath);
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('directory-changed', dirPath);
+          try { mainWindow.webContents.send('directory-changed', dirPath); } catch (_) {}
         }
       }, 300));
     });
-    watcher.on('error', () => dirWatchers.delete(dirPath));
+    watcher.on('error', () => {
+      dirWatchers.delete(dirPath);
+      if (dirChangeTimers.has(dirPath)) {
+        clearTimeout(dirChangeTimers.get(dirPath));
+        dirChangeTimers.delete(dirPath);
+      }
+    });
     dirWatchers.set(dirPath, watcher);
     return true;
   } catch (_) {
@@ -555,6 +590,10 @@ ipcMain.handle('unwatch-directory', (event, dirPath) => {
 
 ipcMain.handle('open-external', async (event, url) => {
   try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return false;
+    }
     await shell.openExternal(url);
     return true;
   } catch (_) {
@@ -578,26 +617,26 @@ ipcMain.handle('get-initial-file', () => {
 // IPC Handlers — AI Key Management (safeStorage)
 // ============================================================
 
-ipcMain.handle('ai-key-set', (event, provider, key) => {
+ipcMain.handle('ai-key-set', async (event, provider, key) => {
   if (!safeStorage.isEncryptionAvailable())
     return { success: false, error: 'OS encryption not available' };
-  const keys = loadAiKeys();
+  const keys = await loadAiKeys();
   keys[provider] = safeStorage.encryptString(key).toString('base64');
-  saveAiKeys(keys);
+  await saveAiKeys(keys);
   return { success: true };
 });
 
 ipcMain.handle('ai-key-get', async (event, provider) => getDecryptedKey(provider));
 
-ipcMain.handle('ai-key-delete', (event, provider) => {
-  const keys = loadAiKeys();
+ipcMain.handle('ai-key-delete', async (event, provider) => {
+  const keys = await loadAiKeys();
   delete keys[provider];
-  saveAiKeys(keys);
+  await saveAiKeys(keys);
   return { success: true };
 });
 
-ipcMain.handle('ai-key-status', () => {
-  const keys = loadAiKeys();
+ipcMain.handle('ai-key-status', async () => {
+  const keys = await loadAiKeys();
   return {
     openaiKeySet:     !!keys['openai'],
     anthropicKeySet:  !!keys['anthropic'],

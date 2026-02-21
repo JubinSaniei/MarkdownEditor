@@ -86,7 +86,15 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Backward-Compat Getters (delegate to active group) ────
   get activeGroup(): EditorGroup {
-    return this.groups.find(g => g.id === this.activeGroupId) ?? this.groups[0];
+    const found = this.groups.find(g => g.id === this.activeGroupId) ?? this.groups[0];
+    if (!found) {
+      // Ensure groups is never empty — recreate the default group
+      const defaultGroup: EditorGroup = { id: 'g1', tabs: [], activeTabId: '', viewMode: 'preview', paneWidth: 50 };
+      this.groups.push(defaultGroup);
+      this.activeGroupId = 'g1';
+      return defaultGroup;
+    }
+    return found;
   }
 
   get tabs(): EditorTab[] {

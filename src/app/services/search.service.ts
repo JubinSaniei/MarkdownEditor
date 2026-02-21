@@ -1,12 +1,13 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { Injectable, OnDestroy } from '@angular/core';
+import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { SearchState, SearchResult, SearchMode, SearchOptions, SearchTarget } from '../interfaces/search.interface';
 
 @Injectable({
   providedIn: 'root'
 })
-export class SearchService {
+export class SearchService implements OnDestroy {
+  private debouncedSub: Subscription;
   private searchState$ = new BehaviorSubject<SearchState>({
     query: '',
     isActive: false,
@@ -31,10 +32,14 @@ export class SearchService {
   );
 
   constructor() {
-    this.debouncedSearch.subscribe(query => {
+    this.debouncedSub = this.debouncedSearch.subscribe(query => {
       const currentState = this.getCurrentState();
       this.searchState$.next({ ...currentState, query });
     });
+  }
+
+  ngOnDestroy(): void {
+    this.debouncedSub.unsubscribe();
   }
 
   getCurrentState(): SearchState {

@@ -65,6 +65,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   private resizeObserver: ResizeObserver | null = null;
   private inlineAiSub?: Subscription;
   private syntaxRafId = 0;
+  private _cachedLineCount = 0;
+  private _cachedLineNumberList: number[] = [];
+  private _cachedContent: string = '';
 
   constructor(
     private aiService: AiService,
@@ -72,8 +75,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   ) {}
 
   get lineNumberList(): number[] {
-    const count = (this.content || '').split('\n').length;
-    return Array.from({ length: count }, (_, i) => i + 1);
+    if (this.content !== this._cachedContent) {
+      this._cachedContent = this.content;
+      const count = (this.content || '').split('\n').length;
+      if (count !== this._cachedLineCount) {
+        this._cachedLineCount = count;
+        this._cachedLineNumberList = Array.from({ length: count }, (_, i) => i + 1);
+      }
+    }
+    return this._cachedLineNumberList;
   }
 
   trackByNumber(_: number, n: number): number { return n; }
@@ -112,6 +122,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   ngOnDestroy() {
     this.resizeObserver?.disconnect();
     this.inlineAiSub?.unsubscribe();
+    if (this.syntaxRafId) cancelAnimationFrame(this.syntaxRafId);
   }
 
   // ── Scroll / layout sync ─────────────────────────────────────
@@ -460,6 +471,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     this.inlineAi.error        = '';
     this.inlineAi.prompt       = '';
 
+    this.inlineAiSub?.unsubscribe();
     this.inlineAiSub = this.aiService.stream({
       provider: this.aiSettingsService.snapshot.activeProvider,
       prompt: fullPrompt,

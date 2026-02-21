@@ -1,9 +1,10 @@
-import { Injectable, ElementRef } from '@angular/core';
+import { Injectable, ElementRef, NgZone } from '@angular/core';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ScrollSyncService {
+  constructor(private ngZone: NgZone) {}
   private isSyncing: boolean = false; // Prevent infinite loops
   private editorElement: HTMLElement | null = null;
   private previewElement: HTMLElement | null = null;
@@ -43,14 +44,16 @@ export class ScrollSyncService {
    */
   private syncFromEditor(): void {
     if (this.isSyncing || !this.editorElement || !this.previewElement) return;
-    
+
     this.isSyncing = true;
     const scrollPercentage = this.calculateScrollPercentage(this.editorElement);
     this.applyScrollPercentage(this.previewElement, scrollPercentage);
-    
-    // Use requestAnimationFrame for smooth 60fps sync
-    requestAnimationFrame(() => {
-      this.isSyncing = false;
+
+    // Use requestAnimationFrame outside Angular zone to avoid triggering change detection
+    this.ngZone.runOutsideAngular(() => {
+      requestAnimationFrame(() => {
+        this.isSyncing = false;
+      });
     });
   }
 
@@ -59,14 +62,16 @@ export class ScrollSyncService {
    */
   private syncFromPreview(): void {
     if (this.isSyncing || !this.editorElement || !this.previewElement) return;
-    
+
     this.isSyncing = true;
     const scrollPercentage = this.calculateScrollPercentage(this.previewElement);
     this.applyScrollPercentage(this.editorElement, scrollPercentage);
-    
-    // Use requestAnimationFrame for smooth 60fps sync
-    requestAnimationFrame(() => {
-      this.isSyncing = false;
+
+    // Use requestAnimationFrame outside Angular zone to avoid triggering change detection
+    this.ngZone.runOutsideAngular(() => {
+      requestAnimationFrame(() => {
+        this.isSyncing = false;
+      });
     });
   }
 

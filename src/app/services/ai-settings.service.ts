@@ -41,8 +41,12 @@ export class AiSettingsService {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return { ...DEFAULTS };
       const p = JSON.parse(raw);
+      const validProviders = ['openai', 'anthropic', 'bedrock'];
+      const activeProvider = validProviders.includes(p.activeProvider)
+        ? p.activeProvider
+        : DEFAULTS.activeProvider;
       return {
-        activeProvider: p.activeProvider ?? DEFAULTS.activeProvider,
+        activeProvider,
         openai:    { ...DEFAULTS.openai,    ...p.openai },
         anthropic: { ...DEFAULTS.anthropic, ...p.anthropic },
         bedrock:   { ...DEFAULTS.bedrock,   ...p.bedrock },

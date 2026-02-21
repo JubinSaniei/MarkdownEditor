@@ -11,18 +11,24 @@ import { AiSettingsService } from '../../services/ai-settings.service';
 import { ElectronService } from '../../services/electron.service';
 import { AiProvider, AiChatMessage } from '../../interfaces/ai-settings.interface';
 
+function escapeHtmlForPanel(text: string): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
 const panelMarked = new Marked({ gfm: true, breaks: true });
 panelMarked.use({
   renderer: {
     code({ text, lang }: { text: string; lang?: string }) {
       const language = lang && hljs.getLanguage(lang) ? lang : '';
+      const escapedLang = escapeHtmlForPanel(language || 'text');
       try {
         const highlighted = language
           ? hljs.highlight(text, { language }).value
           : hljs.highlightAuto(text).value;
-        return `<pre class="hljs"><code class="language-${language || 'text'}">${highlighted}</code></pre>`;
+        return `<pre class="hljs"><code class="language-${escapedLang}">${highlighted}</code></pre>`;
       } catch (_) {
-        return `<pre class="hljs"><code>${text}</code></pre>`;
+        return `<pre class="hljs"><code>${escapeHtmlForPanel(text)}</code></pre>`;
       }
     }
   }

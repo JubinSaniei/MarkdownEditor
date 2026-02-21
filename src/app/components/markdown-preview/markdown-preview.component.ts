@@ -98,9 +98,10 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   }
 
   private codeBlockHtml(codeId: string, lang: string, code: string, preEscaped: boolean): string {
+    const escapedLang = this.escapeHtml(lang);
     return `<div class="code-block-container">
       <div class="code-block-header">
-        <span class="code-language">${lang}</span>
+        <span class="code-language">${escapedLang}</span>
         <button class="copy-btn" data-code-id="${codeId}" title="Copy code">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
             <rect x="4" y="4" width="8" height="8" rx="1" opacity=".8"/>
@@ -108,7 +109,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
           </svg>
         </button>
       </div>
-      <pre class="hljs" id="${codeId}"><code class="language-${lang}">${code}</code></pre>
+      <pre class="hljs" id="${codeId}"><code class="language-${escapedLang}">${code}</code></pre>
     </div>`;
   }
 

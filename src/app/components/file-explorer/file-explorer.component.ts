@@ -473,6 +473,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     event.preventDefault();
     event.stopPropagation();
     this.contextMenu = { visible: true, x: event.clientX, y: event.clientY, node };
+    document.removeEventListener('click', this.closeContextMenuBound);
     document.addEventListener('click', this.closeContextMenuBound);
   }
 
