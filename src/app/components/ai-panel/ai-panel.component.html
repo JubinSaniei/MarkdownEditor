@@ -1,0 +1,220 @@
+<div class="aip-root">
+
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <div class="aip-header">
+    <svg class="aip-header-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 8V4H8"/>
+      <rect width="16" height="12" x="4" y="8" rx="2"/>
+      <path d="M2 14h2"/>
+      <path d="M20 14h2"/>
+      <path d="M15 13v2"/>
+      <path d="M9 13v2"/>
+    </svg>
+    <span class="aip-title">AI Assistant</span>
+    <span class="aip-provider-badge">{{ providerLabel }}</span>
+    <div class="aip-header-actions">
+      <button class="aip-icon-btn" (click)="clearChat()" title="Clear chat">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
+          <path d="M9 6V4h6v2"/>
+        </svg>
+      </button>
+      <button class="aip-icon-btn" (click)="openSettings.emit()" title="AI Settings">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+      </button>
+      <button class="aip-icon-btn" (click)="closed.emit()" title="Close AI panel">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Messages ─────────────────────────────────────────────── -->
+  <div class="aip-messages" #messagesContainer>
+
+    <!-- Empty state -->
+    <div class="aip-empty" *ngIf="messages.length === 0 && !isStreaming && !error">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".35">
+        <path d="M12 8V4H8"/>
+        <rect width="16" height="12" x="4" y="8" rx="2"/>
+        <path d="M2 14h2"/>
+        <path d="M20 14h2"/>
+        <path d="M15 13v2"/>
+        <path d="M9 13v2"/>
+      </svg>
+      <p>Ask AI anything.<br>Press <kbd>Enter</kbd> to send.</p>
+    </div>
+
+    <!-- Chat messages -->
+    <div *ngFor="let msg of messages" class="aip-msg"
+         [class.aip-msg-user]="msg.role === 'user'"
+         [class.aip-msg-assistant]="msg.role === 'assistant'">
+      <div class="aip-msg-label">{{ msg.role === 'user' ? 'You' : providerLabel }}</div>
+      <div *ngIf="msg.role === 'user'" class="aip-msg-body">{{ msg.content }}</div>
+      <div *ngIf="msg.role === 'assistant'" class="aip-msg-body aip-msg-md"
+           [innerHTML]="renderMarkdown(msg.content)"></div>
+      <button *ngIf="msg.role === 'assistant'" class="aip-insert-btn"
+              (click)="insert(msg.content)" title="Insert into editor">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12l7 7 7-7"/>
+        </svg>
+        Insert
+      </button>
+    </div>
+
+    <!-- Streaming message -->
+    <div class="aip-msg aip-msg-assistant aip-msg-streaming" *ngIf="isStreaming">
+      <div class="aip-msg-label">{{ providerLabel }}</div>
+      <div class="aip-msg-body">{{ streamingText }}<span class="aip-cursor"></span></div>
+    </div>
+
+    <!-- Error -->
+    <div class="aip-error" *ngIf="error">
+      <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+        <path d="M7 1L1 13h12L7 1zm0 3v4M7 10h.01"/>
+      </svg>
+      {{ error }}
+    </div>
+
+  </div>
+
+  <!-- ── Context Bar ───────────────────────────────────────────── -->
+  <div class="aip-context-bar">
+    <button *ngIf="currentContent"
+            class="aip-tab-chip"
+            [class.active]="includeFileContent"
+            (click)="includeFileContent = !includeFileContent"
+            [title]="(includeFileContent ? 'Exclude: ' : 'Include: ') + currentFileName">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+      <span class="aip-tab-chip-name">{{ currentFileName }}</span>
+    </button>
+
+    <button class="aip-add-file-btn" (click)="openFilePicker()"
+            [class.has-files]="contextFiles.length > 0"
+            [title]="workspaceRoots.length === 0 ? 'Open a workspace folder first' : 'Attach files from workspace'"
+            [disabled]="workspaceRoots.length === 0">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66L9.41 17.41a2 2 0 01-2.83-2.83l8.49-8.48"/>
+      </svg>
+      {{ contextFiles.length > 0 ? contextFiles.length + ' file' + (contextFiles.length > 1 ? 's' : '') : 'Add files' }}
+    </button>
+
+    <button class="aip-insert-last-btn"
+            *ngIf="lastAssistantMessage && !isStreaming"
+            (click)="insert(lastAssistantMessage!)"
+            title="Insert last AI response into editor">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12l7 7 7-7"/>
+      </svg>
+      Insert last
+    </button>
+  </div>
+
+  <!-- ── Attached Files ────────────────────────────────────────── -->
+  <div class="aip-attached-files" *ngIf="contextFiles.length > 0">
+    <div *ngFor="let file of contextFiles" class="aip-file-chip">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+      <span class="aip-file-chip-name" [title]="file.relativePath">{{ file.name }}</span>
+      <button class="aip-file-chip-remove" (click)="removeContextFile(file.path)" title="Remove">
+        <svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── File Picker Overlay ───────────────────────────────────── -->
+  <div class="aip-picker-backdrop" *ngIf="showFilePicker" (click)="closeFilePicker()"></div>
+  <div class="aip-file-picker" *ngIf="showFilePicker">
+    <div class="aip-picker-header">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input class="aip-picker-search" type="text" placeholder="Search files…"
+             [(ngModel)]="fileSearch" #fileSearchInput>
+      <button class="aip-icon-btn" (click)="closeFilePicker()" title="Close">
+        <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+    <div class="aip-picker-list">
+      <div class="aip-picker-loading" *ngIf="isLoadingFiles">
+        <span class="aip-spinner"></span> Scanning workspace…
+      </div>
+      <div class="aip-picker-empty"
+           *ngIf="!isLoadingFiles && filteredFiles.length === 0 && workspaceFiles.length === 0">
+        No markdown files found in workspace.
+      </div>
+      <div class="aip-picker-empty"
+           *ngIf="!isLoadingFiles && filteredFiles.length === 0 && workspaceFiles.length > 0">
+        No matches for "{{ fileSearch }}".
+      </div>
+      <button *ngFor="let file of filteredFiles"
+              class="aip-picker-item"
+              (click)="addContextFile(file)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <span class="aip-picker-item-path">{{ file.relativePath }}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Input ────────────────────────────────────────────────── -->
+  <div class="aip-input-area">
+    <textarea class="aip-textarea"
+              placeholder="Ask AI… (Enter to send, Ctrl+Enter for new line)"
+              [(ngModel)]="promptText"
+              (keydown)="onKeyDown($event)"
+              [disabled]="isStreaming"
+              #promptInput
+              rows="3">
+    </textarea>
+    <div class="aip-input-actions">
+      <button class="aip-send-btn" *ngIf="!isStreaming"
+              (click)="send()" [disabled]="!promptText.trim()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Send
+      </button>
+      <button class="aip-stop-btn" *ngIf="isStreaming" (click)="stop()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="4" y="4" width="16" height="16" rx="2"/>
+        </svg>
+        Stop
+      </button>
+    </div>
+  </div>
+
+</div>

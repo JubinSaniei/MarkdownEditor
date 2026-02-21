@@ -22,6 +22,8 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   originalHtmlContent: string = '';
 
   private needsListeners = false;
+  private lastHighlightQuery: string = '';
+  private lastHighlightCount: number = 0;
 
   // Event delegation handler bound to this instance
   private copyClickHandler = (event: Event) => {
@@ -112,6 +114,8 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
   ngOnChanges() {
     this.renderMarkdown();
+    this.lastHighlightQuery = '';
+    this.lastHighlightCount = 0;
     this.needsListeners = true;
   }
 
@@ -143,16 +147,29 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
   highlightSearchResults(query: string, results: any[], currentIndex: number) {
     if (!query || !results.length) {
+      this.lastHighlightQuery = '';
+      this.lastHighlightCount = 0;
       this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
       return;
     }
 
+    // If the query and result count haven't changed, just move the .current marker
+    // on the existing DOM instead of rebuilding innerHTML (avoids flicker).
+    if (query === this.lastHighlightQuery && results.length === this.lastHighlightCount) {
+      this.updateCurrentMarker(currentIndex);
+      return;
+    }
+
+    this.lastHighlightQuery = query;
+    this.lastHighlightCount = results.length;
+
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = this.originalHtmlContent;
-    this.highlightMatches(tempDiv, query);
+    this.highlightMatches(tempDiv, query, currentIndex);
     this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(tempDiv.innerHTML);
+    this.needsListeners = true;
 
-    requestAnimationFrame(() => this.scrollToCurrentMatch(currentIndex));
+    requestAnimationFrame(() => this.scrollToCurrentMatch());
   }
 
   scrollToTop() {
@@ -166,6 +183,8 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
    * search state changes (e.g. query becomes empty).
    */
   clearSearchHighlights() {
+    this.lastHighlightQuery = '';
+    this.lastHighlightCount = 0;
     this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
   }
 
@@ -174,17 +193,20 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
    * closes the search panel (Esc / X button).
    */
   closeSearch() {
+    this.lastHighlightQuery = '';
+    this.lastHighlightCount = 0;
     this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
     this.previewElement?.nativeElement.focus();
   }
 
-  private highlightMatches(element: HTMLElement, query: string) {
+  private highlightMatches(element: HTMLElement, query: string, currentIndex: number) {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const textNodes: Text[] = [];
     let node;
     while ((node = walker.nextNode())) textNodes.push(node as Text);
 
     const lowerQuery = query.toLowerCase();
+    let matchCount = 0;
     textNodes.forEach(textNode => {
       const text = textNode.textContent || '';
       const lowerText = text.toLowerCase();
@@ -197,7 +219,10 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
       while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
         if (idx > lastIndex) parts.push(document.createTextNode(text.substring(lastIndex, idx)));
         const mark = document.createElement('mark');
-        mark.className = 'search-highlight';
+        matchCount++;
+        mark.className = matchCount === currentIndex
+          ? 'search-highlight current'
+          : 'search-highlight';
         mark.textContent = text.substring(idx, idx + query.length);
         parts.push(mark);
         lastIndex = idx + query.length;
@@ -213,10 +238,16 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     });
   }
 
-  private scrollToCurrentMatch(currentIndex: number) {
+  private updateCurrentMarker(currentIndex: number) {
     if (!this.previewElement) return;
     const highlights = this.previewElement.nativeElement.querySelectorAll('.search-highlight');
-    highlights.forEach((h, i) => h.classList.toggle('current', i === currentIndex - 1));
+    highlights.forEach((h: Element, i: number) => h.classList.toggle('current', i === currentIndex - 1));
+    const current = this.previewElement.nativeElement.querySelector('.search-highlight.current');
+    current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  private scrollToCurrentMatch() {
+    if (!this.previewElement) return;
     const current = this.previewElement.nativeElement.querySelector('.search-highlight.current');
     current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }

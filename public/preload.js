@@ -52,5 +52,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPathForFile: (file) => webUtils.getPathForFile(file),
 
   // Open a URL in the default system browser
-  openExternal: (url) => ipcRenderer.invoke('open-external', url)
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
+  // AI key management
+  aiKeySet: (provider, key) => ipcRenderer.invoke('ai-key-set', provider, key),
+  aiKeyGet: (provider) => ipcRenderer.invoke('ai-key-get', provider),
+  aiKeyDelete: (provider) => ipcRenderer.invoke('ai-key-delete', provider),
+  aiKeyStatus: () => ipcRenderer.invoke('ai-key-status'),
+
+  // AI streaming
+  aiStreamStart: (payload) => ipcRenderer.send('ai-stream-start', payload),
+  aiStreamCancel: (requestId) => ipcRenderer.invoke('ai-stream-cancel', requestId),
+  onAiStreamChunk: (callback) => {
+    ipcRenderer.removeAllListeners('ai-stream-chunk');
+    ipcRenderer.on('ai-stream-chunk', (_, data) => callback(data));
+  },
+  removeAiStreamChunkListener: () => ipcRenderer.removeAllListeners('ai-stream-chunk'),
 });

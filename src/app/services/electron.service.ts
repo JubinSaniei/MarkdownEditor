@@ -138,4 +138,43 @@ export class ElectronService {
     if (this.isElectron) window.electronAPI.openExternal(url);
     else window.open(url, '_blank');
   }
+
+  // --- AI Key Management ---
+
+  async aiKeySet(provider: 'openai' | 'anthropic', key: string): Promise<{ success: boolean; error?: string }> {
+    if (this.isElectron) return await window.electronAPI.aiKeySet(provider, key);
+    return { success: false, error: 'Electron not available' };
+  }
+
+  async aiKeyGet(provider: 'openai' | 'anthropic'): Promise<string> {
+    return this.isElectron ? await window.electronAPI.aiKeyGet(provider) : '';
+  }
+
+  async aiKeyDelete(provider: 'openai' | 'anthropic'): Promise<{ success: boolean }> {
+    if (this.isElectron) return await window.electronAPI.aiKeyDelete(provider);
+    return { success: false };
+  }
+
+  async aiKeyStatus(): Promise<{ openaiKeySet: boolean; anthropicKeySet: boolean; openaiEnvKey: boolean; anthropicEnvKey: boolean }> {
+    if (this.isElectron) return await window.electronAPI.aiKeyStatus();
+    return { openaiKeySet: false, anthropicKeySet: false, openaiEnvKey: false, anthropicEnvKey: false };
+  }
+
+  // --- AI Streaming ---
+
+  aiStreamStart(payload: object): void {
+    if (this.isElectron) window.electronAPI.aiStreamStart(payload);
+  }
+
+  async aiStreamCancel(requestId: string): Promise<void> {
+    if (this.isElectron) await window.electronAPI.aiStreamCancel(requestId);
+  }
+
+  onAiStreamChunk(callback: (data: { requestId: string; type: string; text?: string; error?: string }) => void): void {
+    if (this.isElectron) window.electronAPI.onAiStreamChunk(callback);
+  }
+
+  removeAiStreamChunkListener(): void {
+    if (this.isElectron) window.electronAPI.removeAiStreamChunkListener();
+  }
 }

@@ -1,4 +1,4 @@
-<div class="editor-wrapper">
+<div class="editor-wrapper" [class.inline-ai-active]="inlineAi.visible">
 
   <!-- ── Format Toolbar ──────────────────────────────────────── -->
   <div class="format-toolbar" *ngIf="!readOnly">
@@ -134,6 +134,20 @@
 
     </div>
 
+    <div class="fmt-sep"></div>
+
+    <!-- Inline AI -->
+    <button class="fmt-btn" [class.fmt-btn-active]="inlineAi.visible"
+            (click)="triggerInlineAi()" title="Inline AI (Ctrl+Shift+A)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8V4H8"/>
+        <rect width="16" height="12" x="4" y="8" rx="2"/>
+        <path d="M2 14h2"/><path d="M20 14h2"/>
+        <path d="M15 13v2"/><path d="M9 13v2"/>
+      </svg>
+    </button>
+
     <!-- Spacer pushes cheat-sheet button to the far right -->
     <div class="fmt-spacer"></div>
 
@@ -232,6 +246,111 @@
       <div class="cs-row cs-row-full"><code>&amp;copy; &amp;amp; &amp;lt;</code><span>HTML entities</span></div>
 
     </div>
+  </div>
+
+  <!-- ── Inline AI Bar ──────────────────────────────────────────── -->
+  <div class="inline-ai-bar" *ngIf="inlineAi.visible">
+
+    <!-- Header -->
+    <div class="iai-header">
+      <svg class="iai-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8V4H8"/>
+        <rect width="16" height="12" x="4" y="8" rx="2"/>
+        <path d="M2 14h2"/><path d="M20 14h2"/>
+        <path d="M15 13v2"/><path d="M9 13v2"/>
+      </svg>
+      <span class="iai-title">AI {{ inlineAi.selStart !== inlineAi.selEnd ? 'Edit Selection' : 'Generate' }}</span>
+      <span class="iai-selection-hint"
+            *ngIf="inlineAi.originalText"
+            [title]="inlineAi.originalText">
+        "{{ inlineAi.originalText.length > 32 ? (inlineAi.originalText.substring(0, 32) + '…') : inlineAi.originalText }}"
+      </span>
+      <button class="iai-close-btn" (click)="discardInline()" title="Close (Esc)">
+        <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Quick-action chips (only before first send) -->
+    <div class="iai-chips" *ngIf="!inlineAi.isStreaming && inlineAi.previewText === null && !inlineAi.error">
+      <button *ngFor="let chip of (inlineAi.selStart !== inlineAi.selEnd ? editChips : generateChips)"
+              class="iai-chip" (click)="sendChip(chip.prompt)" [title]="chip.prompt">
+        {{ chip.label }}
+      </button>
+    </div>
+
+    <!-- Input row -->
+    <div class="iai-input-row">
+      <input class="iai-prompt-input" type="text"
+             [(ngModel)]="inlineAi.prompt"
+             (keydown)="onInlineAiKeyDown($event)"
+             [placeholder]="inlineAi.previewText !== null
+               ? 'Refine… or press Enter / Tab to accept'
+               : (inlineAi.selStart !== inlineAi.selEnd ? 'How should I transform the selection?' : 'What should I generate?')"
+             [disabled]="inlineAi.isStreaming"
+             #inlineAiInput>
+      <button class="iai-send-btn" *ngIf="!inlineAi.isStreaming"
+              (click)="sendInlineAi()"
+              [disabled]="!inlineAi.prompt.trim() && inlineAi.previewText === null">
+        {{ inlineAi.previewText !== null ? 'Refine' : 'Go' }}
+      </button>
+      <button class="iai-stop-btn" *ngIf="inlineAi.isStreaming" (click)="stopInline()">
+        Stop
+      </button>
+    </div>
+
+    <!-- Streaming preview -->
+    <div class="iai-preview" *ngIf="inlineAi.isStreaming && inlineAi.streamingText">
+      <div class="iai-preview-text">{{ inlineAi.streamingText }}<span class="iai-cursor"></span></div>
+    </div>
+
+    <!-- Result: diff view (edit mode — has original selection) -->
+    <div class="iai-diff"
+         *ngIf="!inlineAi.isStreaming && inlineAi.previewText !== null && inlineAi.selStart !== inlineAi.selEnd">
+      <div class="iai-diff-pane iai-diff-before">
+        <div class="iai-diff-label">Before</div>
+        <div class="iai-preview-text">{{ inlineAi.originalText }}</div>
+      </div>
+      <div class="iai-diff-pane iai-diff-after">
+        <div class="iai-diff-label">After</div>
+        <div class="iai-preview-text">{{ inlineAi.previewText }}</div>
+      </div>
+    </div>
+
+    <!-- Result: simple preview (generate mode — no selection) -->
+    <div class="iai-preview"
+         *ngIf="!inlineAi.isStreaming && inlineAi.previewText !== null && inlineAi.selStart === inlineAi.selEnd">
+      <div class="iai-preview-text">{{ inlineAi.previewText }}</div>
+    </div>
+
+    <!-- Accept / Discard actions -->
+    <div class="iai-actions" *ngIf="!inlineAi.isStreaming && inlineAi.previewText !== null">
+      <button class="iai-accept-btn" (click)="acceptInline()">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Accept
+      </button>
+      <button class="iai-discard-btn" (click)="discardInline()">
+        Discard
+      </button>
+      <span class="iai-kbd-hint">
+        <kbd>Tab</kbd> or <kbd>Enter</kbd> to accept · <kbd>Esc</kbd> to discard
+      </span>
+    </div>
+
+    <!-- Error -->
+    <div class="iai-error" *ngIf="inlineAi.error">
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
+        <path d="M7 1L1 13h12L7 1zm0 3v4M7 10h.01"/>
+      </svg>
+      {{ inlineAi.error }}
+    </div>
+
   </div>
 
   <!-- ── Editor ───────────────────────────────────────────────── -->

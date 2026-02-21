@@ -1,4 +1,7 @@
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnChanges, OnDestroy, HostListener, SimpleChanges } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { AiService } from '../../services/ai.service';
+import { AiSettingsService } from '../../services/ai-settings.service';
 
 @Component({
   selector: 'app-markdown-editor',
@@ -6,7 +9,7 @@ import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterVie
   styleUrls: ['./markdown-editor.component.scss'],
   standalone: false
 })
-export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
+export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() content: string = '';
   @Input() readOnly = false;
   @Output() contentChange = new EventEmitter<string>();
@@ -15,10 +18,58 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   @ViewChild('lineNumbers') lineNumbersEl!: ElementRef<HTMLDivElement>;
   @ViewChild('cheatsheetPanel') cheatsheetPanelEl!: ElementRef<HTMLDivElement>;
   @ViewChild('cheatsheetBtn') cheatsheetBtnEl!: ElementRef<HTMLButtonElement>;
+  @ViewChild('inlineAiInput') inlineAiInputRef?: ElementRef<HTMLInputElement>;
 
   showCheatsheet = false;
 
+  inlineAi: {
+    visible: boolean;
+    prompt: string;
+    isStreaming: boolean;
+    streamingText: string;
+    previewText: string | null;
+    selStart: number;
+    selEnd: number;
+    originalText: string;
+    error: string;
+  } = {
+    visible: false,
+    prompt: '',
+    isStreaming: false,
+    streamingText: '',
+    previewText: null,
+    selStart: 0,
+    selEnd: 0,
+    originalText: '',
+    error: '',
+  };
+
+  readonly editChips = [
+    { label: 'Fix grammar',   prompt: 'Fix grammar and spelling' },
+    { label: 'Make shorter',  prompt: 'Make this more concise' },
+    { label: 'Make longer',   prompt: 'Expand this with more detail' },
+    { label: 'Rephrase',      prompt: 'Rephrase in different words' },
+    { label: 'To bullets',    prompt: 'Convert to a bullet list' },
+  ];
+
+  readonly generateChips = [
+    { label: 'Continue',      prompt: 'Continue writing from here' },
+    { label: 'Add example',   prompt: 'Add a practical example' },
+    { label: 'Add table',     prompt: 'Create a markdown table here' },
+    { label: 'Summarize doc', prompt: 'Write a brief summary of this document' },
+  ];
+
+  promptHistory: string[] = [];
+  private historyIndex = -1;
+
   private resizeObserver: ResizeObserver | null = null;
+  private inlineAiSub?: Subscription;
+  private syntaxRafId = 0;
+
+  constructor(
+    private aiService: AiService,
+    private aiSettingsService: AiSettingsService
+  ) {}
 
   get lineNumberList(): number[] {
     const count = (this.content || '').split('\n').length;
@@ -47,11 +98,20 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         this.syncBackdropStyles();
         this.syncBackdropWidth();
       });
+
+      this.updateSyntaxBackdrop();
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['content']) {
+      this.scheduleSyntaxUpdate();
     }
   }
 
   ngOnDestroy() {
     this.resizeObserver?.disconnect();
+    this.inlineAiSub?.unsubscribe();
   }
 
   // ── Scroll / layout sync ─────────────────────────────────────
@@ -89,9 +149,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   onContentChange(event: any) {
     this.content = event.target.value;
     this.contentChange.emit(this.content);
+    this.scheduleSyntaxUpdate();
   }
 
   onEditorKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && this.inlineAi.visible) {
+      event.preventDefault();
+      this.discardInline();
+      return;
+    }
     const ctrl = event.ctrlKey || event.metaKey;
     if (!ctrl) return;
     switch (event.key) {
@@ -99,6 +165,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       case 'i': event.preventDefault(); this.fmtItalic();     return;
       case 'k': event.preventDefault(); this.fmtLink();       return;
       case '`': event.preventDefault(); this.fmtInlineCode(); return;
+      case 'A':
+        if (event.shiftKey && !this.readOnly) { event.preventDefault(); this.triggerInlineAi(); }
+        return;
     }
   }
 
@@ -323,6 +392,197 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.applyFormat(nv, h1Start, h1Start + 8);
   }
 
+  // ── Inline AI ─────────────────────────────────────────────────
+
+  triggerInlineAi(): void {
+    const ta = this.editorElement?.nativeElement;
+    if (!ta) return;
+    const selStart = ta.selectionStart;
+    const selEnd   = ta.selectionEnd;
+    this.inlineAi = {
+      visible: true,
+      prompt: '',
+      isStreaming: false,
+      streamingText: '',
+      previewText: null,
+      selStart,
+      selEnd,
+      originalText: this.content.substring(selStart, selEnd),
+      error: '',
+    };
+    this.historyIndex = -1;
+    setTimeout(() => this.inlineAiInputRef?.nativeElement.focus(), 0);
+  }
+
+  sendChip(prompt: string): void {
+    this.inlineAi.prompt = prompt;
+    this.sendInlineAi();
+  }
+
+  sendInlineAi(): void {
+    const prompt = this.inlineAi.prompt.trim();
+    if (!prompt || this.inlineAi.isStreaming) return;
+
+    const { selStart, selEnd, originalText, previewText } = this.inlineAi;
+    const hasSelection = selStart !== selEnd;
+    const isRefining   = previewText !== null;
+    const ctx          = this.getSurroundingLines(selStart, selEnd);
+
+    // Update history (deduplicate, cap at 20)
+    this.promptHistory = [prompt, ...this.promptHistory.filter(h => h !== prompt)].slice(0, 20);
+    this.historyIndex  = -1;
+
+    let fullPrompt: string;
+    let systemPrompt: string;
+
+    if (hasSelection) {
+      const parts: string[] = [];
+      if (ctx.before) parts.push(`Context before:\n\`\`\`\n${ctx.before}\n\`\`\``);
+      parts.push(`Selected text:\n\`\`\`\n${originalText}\n\`\`\``);
+      if (ctx.after)  parts.push(`Context after:\n\`\`\`\n${ctx.after}\n\`\`\``);
+      if (isRefining) parts.push(`Previous suggestion:\n\`\`\`\n${previewText}\n\`\`\``);
+      parts.push(`Instruction: ${prompt}`);
+      fullPrompt   = parts.join('\n\n');
+      systemPrompt = 'You are a markdown document assistant. The user wants to transform the selected markdown text. Apply the requested transformation and return ONLY the modified markdown text, with no explanations, preamble, or wrapper text.';
+    } else {
+      const parts: string[] = [];
+      if (ctx.before) parts.push(`Context before cursor:\n\`\`\`\n${ctx.before}\n\`\`\``);
+      if (ctx.after)  parts.push(`Context after cursor:\n\`\`\`\n${ctx.after}\n\`\`\``);
+      if (isRefining) parts.push(`Previous suggestion:\n\`\`\`\n${previewText}\n\`\`\``);
+      parts.push(prompt);
+      fullPrompt   = parts.join('\n\n');
+      systemPrompt = 'You are a markdown document assistant. Generate the requested markdown content. Return ONLY the markdown text, with no explanations or preamble.';
+    }
+
+    this.inlineAi.isStreaming  = true;
+    this.inlineAi.streamingText = '';
+    this.inlineAi.previewText  = null;
+    this.inlineAi.error        = '';
+    this.inlineAi.prompt       = '';
+
+    this.inlineAiSub = this.aiService.stream({
+      provider: this.aiSettingsService.snapshot.activeProvider,
+      prompt: fullPrompt,
+      systemPrompt,
+    }).subscribe({
+      next: (chunk) => {
+        if (chunk.type === 'chunk' && chunk.text) {
+          this.inlineAi.streamingText += chunk.text;
+        }
+      },
+      error: (err: Error) => {
+        this.inlineAi.isStreaming = false;
+        this.inlineAi.error = err.message || 'Stream error';
+        if (this.inlineAi.streamingText) {
+          this.inlineAi.previewText = this.inlineAi.streamingText;
+          this.inlineAi.streamingText = '';
+        }
+      },
+      complete: () => {
+        this.inlineAi.isStreaming = false;
+        this.inlineAi.previewText = this.inlineAi.streamingText;
+        this.inlineAi.streamingText = '';
+      },
+    });
+  }
+
+  onInlineAiKeyDown(event: KeyboardEvent): void {
+    switch (event.key) {
+      case 'Escape':
+        event.preventDefault();
+        this.discardInline();
+        break;
+      case 'Tab':
+        if (this.inlineAi.previewText !== null) {
+          event.preventDefault();
+          this.acceptInline();
+        }
+        break;
+      case 'Enter':
+        event.preventDefault();
+        if (!this.inlineAi.isStreaming) {
+          if (this.inlineAi.previewText !== null && !this.inlineAi.prompt.trim()) {
+            this.acceptInline();
+          } else {
+            this.sendInlineAi();
+          }
+        }
+        break;
+      case 'ArrowUp':
+        if (this.promptHistory.length > 0) {
+          event.preventDefault();
+          this.historyIndex = Math.min(this.historyIndex + 1, this.promptHistory.length - 1);
+          this.inlineAi.prompt = this.promptHistory[this.historyIndex];
+        }
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        if (this.historyIndex > 0) {
+          this.historyIndex--;
+          this.inlineAi.prompt = this.promptHistory[this.historyIndex];
+        } else {
+          this.historyIndex = -1;
+          this.inlineAi.prompt = '';
+        }
+        break;
+    }
+  }
+
+  acceptInline(): void {
+    const text = this.inlineAi.previewText;
+    if (text === null) return;
+    const { selStart, selEnd } = this.inlineAi;
+    const newValue = this.content.substring(0, selStart) + text + this.content.substring(selEnd);
+    const cursorEnd = selStart + text.length;
+    this.applyFormat(newValue, cursorEnd, cursorEnd);
+    this.discardInline();
+  }
+
+  discardInline(): void {
+    this.inlineAiSub?.unsubscribe();
+    this.historyIndex = -1;
+    this.inlineAi = {
+      visible: false,
+      prompt: '',
+      isStreaming: false,
+      streamingText: '',
+      previewText: null,
+      selStart: 0,
+      selEnd: 0,
+      originalText: '',
+      error: '',
+    };
+    setTimeout(() => this.editorElement?.nativeElement.focus(), 0);
+  }
+
+  stopInline(): void {
+    this.inlineAiSub?.unsubscribe();
+    this.inlineAi.isStreaming = false;
+    if (this.inlineAi.streamingText) {
+      this.inlineAi.previewText = this.inlineAi.streamingText;
+      this.inlineAi.streamingText = '';
+    }
+  }
+
+  private getSurroundingLines(selStart: number, selEnd: number, count = 4): { before: string; after: string } {
+    const lines = this.content.split('\n');
+    let pos = 0;
+    let startLine = 0;
+    let endLine   = lines.length - 1;
+    let foundStart = false;
+    let foundEnd   = false;
+    for (let i = 0; i < lines.length; i++) {
+      const lineEnd = pos + lines[i].length;
+      if (!foundStart && selStart <= lineEnd) { startLine = i; foundStart = true; }
+      if (!foundEnd   && selEnd   <= lineEnd) { endLine   = i; foundEnd   = true; break; }
+      pos += lines[i].length + 1;
+    }
+    return {
+      before: lines.slice(Math.max(0, startLine - count), startLine).join('\n'),
+      after:  lines.slice(endLine + 1, Math.min(lines.length, endLine + 1 + count)).join('\n'),
+    };
+  }
+
   // ── Search highlighting (public API for parent) ──────────────
 
   highlightSearchResults(query: string, results: any[], currentIndex: number) {
@@ -389,17 +649,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private updateBackdropHighlights(query: string, results: any[], currentIndex: number) {
     if (!this.highlightBackdrop || !this.editorElement) return;
 
-    const textarea = this.editorElement.nativeElement;
     const backdrop = this.highlightBackdrop.nativeElement;
 
-    if (query && results.length > 0) {
-      textarea.classList.add('search-active');
-    } else {
-      textarea.classList.remove('search-active');
-    }
-
     if (!query || results.length === 0) {
-      backdrop.innerHTML = '';
+      this.updateSyntaxBackdrop();
       return;
     }
 
@@ -450,17 +703,172 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   }
 
   private clearHighlights() {
-    if (this.highlightBackdrop) {
-      this.highlightBackdrop.nativeElement.innerHTML = '';
-    }
-    if (this.editorElement) {
-      this.editorElement.nativeElement.classList.remove('search-active');
-    }
+    this.updateSyntaxBackdrop();
   }
 
   private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  // ── Syntax highlighting ───────────────────────────────────────
+
+  private scheduleSyntaxUpdate(): void {
+    if (this.syntaxRafId) cancelAnimationFrame(this.syntaxRafId);
+    this.syntaxRafId = requestAnimationFrame(() => {
+      this.syntaxRafId = 0;
+      this.updateSyntaxBackdrop();
+    });
+  }
+
+  private updateSyntaxBackdrop(): void {
+    if (!this.highlightBackdrop) return;
+    const html = this.syntaxHighlight(this.content || '');
+    this.highlightBackdrop.nativeElement.innerHTML = html;
+    this.syncBackdropWidth();
+    this.syncScroll();
+  }
+
+  private syntaxHighlight(text: string): string {
+    const lines = text.replace(/\r/g, '').split('\n');
+    const out: string[] = [];
+    let inFence = false;
+
+    for (const raw of lines) {
+      const esc = this.escapeHtml(raw);
+
+      // Fenced code block fence line (``` or ~~~)
+      if (/^(`{3,}|~{3,})/.test(raw)) {
+        if (!inFence) inFence = true;
+        else inFence = false;
+        out.push(`<span class="syn-fence">${esc}</span>`);
+        continue;
+      }
+
+      // Inside fenced code block
+      if (inFence) {
+        out.push(`<span class="syn-code-line">${esc}</span>`);
+        continue;
+      }
+
+      // Headings (# through ######)
+      const hm = raw.match(/^(#{1,6})([ \t]|$)/);
+      if (hm) {
+        const level = hm[1].length;
+        out.push(`<span class="syn-h${level}"><span class="syn-marker">${this.escapeHtml(hm[1])}</span>${this.inlineHighlight(raw.slice(hm[1].length))}</span>`);
+        continue;
+      }
+
+      // Horizontal rule (---, ***, ___ with optional spaces)
+      if (/^[ \t]{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(raw) && raw.trim().length >= 3) {
+        out.push(`<span class="syn-hr">${esc}</span>`);
+        continue;
+      }
+
+      // Blockquote
+      if (/^>/.test(raw)) {
+        const markerMatch = raw.match(/^(>+[ \t]?)/);
+        const marker = markerMatch ? markerMatch[1] : '>';
+        const rest = raw.slice(marker.length);
+        out.push(`<span class="syn-bq-marker">${this.escapeHtml(marker)}</span><span class="syn-blockquote">${this.inlineHighlight(rest)}</span>`);
+        continue;
+      }
+
+      // Task list item (must come before unordered list)
+      const taskM = raw.match(/^([ \t]*)([-*+][ \t])(\[[ xX]\])([ \t]?)(.*)/);
+      if (taskM) {
+        const [, indent, bullet, checkbox, sp, rest] = taskM;
+        out.push(
+          this.escapeHtml(indent) +
+          `<span class="syn-list-marker">${this.escapeHtml(bullet)}</span>` +
+          `<span class="syn-punct">${this.escapeHtml(checkbox)}</span>` +
+          this.escapeHtml(sp) +
+          this.inlineHighlight(rest)
+        );
+        continue;
+      }
+
+      // Unordered list item
+      const ulM = raw.match(/^([ \t]*)([-*+])([ \t])(.*)/);
+      if (ulM) {
+        const [, indent, bullet, sp, rest] = ulM;
+        out.push(
+          this.escapeHtml(indent) +
+          `<span class="syn-list-marker">${this.escapeHtml(bullet + sp)}</span>` +
+          this.inlineHighlight(rest)
+        );
+        continue;
+      }
+
+      // Ordered list item
+      const olM = raw.match(/^([ \t]*)(\d+\.)([ \t])(.*)/);
+      if (olM) {
+        const [, indent, num, sp, rest] = olM;
+        out.push(
+          this.escapeHtml(indent) +
+          `<span class="syn-list-marker">${this.escapeHtml(num + sp)}</span>` +
+          this.inlineHighlight(rest)
+        );
+        continue;
+      }
+
+      // Normal line
+      out.push(this.inlineHighlight(raw));
+    }
+
+    return out.join('\n');
+  }
+
+  private inlineHighlight(raw: string): string {
+    // Step 1: extract inline code so its content is never re-processed
+    const codes: string[] = [];
+    let s = raw.replace(/`([^`\n]+)`/g, (_m, inner) => {
+      codes.push(inner);
+      return `\uE000${codes.length - 1}\uE001`;
+    });
+
+    // Step 2: HTML-escape the remaining text (placeholders survive untouched)
+    s = this.escapeHtml(s);
+
+    // Step 3: images before links to prevent `![` being matched as a link
+    s = s.replace(/!\[([^\]\n]*)\]\(([^)\n]*)\)/g,
+      (_m, alt, url) =>
+        `<span class="syn-punct">![</span><span class="syn-link-text">${alt}</span><span class="syn-punct">](</span><span class="syn-url">${url}</span><span class="syn-punct">)</span>`
+    );
+
+    s = s.replace(/\[([^\]\n]*)\]\(([^)\n]*)\)/g,
+      (_m, text, url) =>
+        `<span class="syn-punct">[</span><span class="syn-link-text">${text}</span><span class="syn-punct">](</span><span class="syn-url">${url}</span><span class="syn-punct">)</span>`
+    );
+
+    // Bold (**…** then __…__)
+    s = s.replace(/\*\*(.+?)\*\*/g,
+      (_m, inner) =>
+        `<span class="syn-marker">\*\*</span><span class="syn-bold">${inner}</span><span class="syn-marker">\*\*</span>`
+    );
+    s = s.replace(/__([^_\n]+)__/g,
+      (_m, inner) =>
+        `<span class="syn-marker">__</span><span class="syn-bold">${inner}</span><span class="syn-marker">__</span>`
+    );
+
+    // Italic (*…* then _…_) — exclude content with * or span tags to avoid false matches
+    s = s.replace(/\*([^*\n<>]+)\*/g,
+      (_m, inner) =>
+        `<span class="syn-marker">\*</span><span class="syn-italic">${inner}</span><span class="syn-marker">\*</span>`
+    );
+    s = s.replace(/_([^_\n<>]+)_/g,
+      (_m, inner) =>
+        `<span class="syn-marker">_</span><span class="syn-italic">${inner}</span><span class="syn-marker">_</span>`
+    );
+
+    // Step 4: restore inline code
+    s = s.replace(/\uE000(\d+)\uE001/g,
+      (_m, idx) =>
+        `<span class="syn-inline-code">\`${this.escapeHtml(codes[+idx])}\`</span>`
+    );
+
+    return s;
   }
 }

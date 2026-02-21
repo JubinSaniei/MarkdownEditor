@@ -1,0 +1,315 @@
+.ai-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-settings-modal {
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--surface-elevated);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+// ── Header ─────────────────────────────────────────────────
+.asm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.asm-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.asm-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+  }
+}
+
+// ── Active Provider ─────────────────────────────────────────
+.asm-active-provider {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.asm-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.asm-radio-group {
+  display: flex;
+  gap: 16px;
+}
+
+.asm-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+
+  input[type="radio"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+}
+
+// ── Tabs ────────────────────────────────────────────────────
+.asm-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.asm-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding: 10px 12px;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+
+  &.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 500;
+  }
+}
+
+// ── Panel ───────────────────────────────────────────────────
+.asm-panel {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.asm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asm-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.asm-hint {
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.asm-key-saved {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.asm-env-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--hover-bg);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.asm-env-hint {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--text-secondary);
+  }
+}
+
+.asm-key-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.asm-key-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.asm-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+}
+
+.asm-icon-btn {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+  }
+}
+
+.asm-delete-btn {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--danger);
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+
+  &:hover {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    border-color: var(--danger);
+  }
+}
+
+// ── Error ───────────────────────────────────────────────────
+.asm-error {
+  margin: 0 20px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// ── Footer ──────────────────────────────────────────────────
+.asm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border-primary);
+}
+
+.asm-btn {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.asm-btn-cancel {
+  background: none;
+  color: var(--text-secondary);
+  border-color: var(--border-primary);
+
+  &:hover:not(:disabled) {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
+}
+
+.asm-btn-save {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+}

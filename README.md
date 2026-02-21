@@ -1,6 +1,6 @@
 # Markdown Editor
 
-A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with multi-pane editor groups, tabs, multiple view modes, advanced search with replace, resizable split panes, and full session restore.
+A modern desktop markdown editor built with Angular and Electron. Provides a professional editing experience with multi-pane editor groups, tabs, multiple view modes, advanced search with replace, resizable split panes, full session restore, and multi-provider AI assistance.
 
 ![Markdown Editor](src/assets/demo.gif)
 
@@ -62,6 +62,113 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - Workspace roots, editor groups, all open tabs, active tab, per-pane view modes, split divider positions, font size, and recent files are all restored on next launch
 - Window position and size are saved on close and restored on the next launch
 
+### AI Assistant (Side Panel)
+
+Click the bot icon in the toolbar (or the × to close) to open the AI chat panel on the right.
+
+- **Multi-provider** — choose between OpenAI, Anthropic, and AWS Bedrock; configure via the settings gear icon
+- **Current file context** — click the filename chip in the context bar to include the active file's content with your message
+- **Attach workspace files** — click **Add files** to pick any markdown file from the workspace and attach it as context (multiple files supported)
+- **Streaming responses** with a blinking cursor during generation; **Stop** cancels mid-stream
+- **Insert last** — one-click button to insert the most recent AI response at the cursor position
+- **Insert per-message** — every assistant message has an individual Insert button
+- **Chat history** persists within the session; **Clear** resets it
+- API keys are stored encrypted via OS-level encryption (`safeStorage`), never in plaintext
+- Keys can also be supplied via environment variables — useful for CI, Docker, or shared machines where storing keys interactively is impractical
+- Non-sensitive settings (active provider, model names, base URL) persisted in `localStorage`
+
+#### AI Settings
+
+Open AI Settings from the gear icon in the AI panel header or the toolbar.
+
+| Provider | Configuration |
+|---|---|
+| **OpenAI** | API key + optional base URL override (for compatible endpoints) + model name |
+| **Anthropic** | API key + model name |
+| **AWS Bedrock** | AWS profile + region + model ID (no key stored — uses AWS credential chain) |
+
+- **Key saved** badge confirms the key is stored; the input field is never pre-filled
+- Delete a stored key with the trash button
+- Cancel discards all changes; Save persists them
+
+#### API Key Priority & Environment Variables
+
+Keys are resolved in this order — the first source that has a value wins:
+
+1. **Stored key** (saved via Settings, encrypted with `safeStorage`)
+2. **Environment variable** (set before launching the app)
+
+| Provider | Environment variable |
+|---|---|
+| OpenAI | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+
+The settings dialog shows which source is active:
+
+| Badge | Meaning |
+|---|---|
+| `Key saved` | An encrypted key is stored and will be used |
+| `Key saved (overrides OPENAI_API_KEY)` | Both are present; the stored key takes precedence |
+| `Using OPENAI_API_KEY` | No stored key; the environment variable will be used |
+| *(hint text)* | Neither source found; shows the variable name to set |
+
+**Setting env vars by platform:**
+
+```bash
+# macOS / Linux
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Windows (Command Prompt)
+set OPENAI_API_KEY=sk-...
+
+# Windows (PowerShell)
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+For a persistent setup add them to your shell profile (`~/.bashrc`, `~/.zshrc`) or system environment variables. For Docker or CI, inject them as container/pipeline secrets.
+
+AWS Bedrock uses the standard AWS credential chain (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, `AWS_REGION`) which the AWS SDK resolves automatically — no special handling required.
+
+---
+
+### Inline AI (Editor)
+
+Press **`Ctrl+Shift+A`** or click the bot icon in the format toolbar to open the inline AI bar at the bottom of the editor. Only available in Edit mode.
+
+**Two modes, detected automatically:**
+
+| Mode | When | Behaviour |
+|---|---|---|
+| **Edit Selection** | Text is selected | AI transforms the selected text based on your instruction |
+| **Generate** | No selection | AI generates content and inserts it at the cursor |
+
+**Quick-action chips** — one-click prompts that fire immediately without typing:
+
+- Edit mode: `Fix grammar` · `Make shorter` · `Make longer` · `Rephrase` · `To bullets`
+- Generate mode: `Continue` · `Add example` · `Add table` · `Summarize doc`
+
+**Diff view (Edit mode)** — results show a side-by-side Before / After panel so you can compare the original and the AI suggestion before committing.
+
+**Refine without discarding** — after a result appears, the input is re-enabled. Type a follow-up instruction (e.g. "make it shorter") and click **Refine** to iterate. The AI receives the original text, the previous suggestion, and the new instruction.
+
+**Surrounding context** — the 4 lines before and after the cursor/selection are automatically included in the request so the AI matches tone, heading level, and list style.
+
+**Prompt history** — press `↑` / `↓` in the input to recall previous prompts within the session.
+
+**Keyboard shortcuts in the inline bar:**
+
+| Key | Action |
+|---|---|
+| `Enter` (empty prompt, result visible) | Accept |
+| `Tab` | Accept |
+| `Escape` | Discard / close bar |
+| `↑` / `↓` | Navigate prompt history |
+
+**Accept** inserts or replaces via the native undo stack — `Ctrl+Z` works as expected.
+
+---
+
 ### Theming
 - Light and dark themes via a single toggle button
 - Preference persisted in localStorage
@@ -73,6 +180,7 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - **Markdown**: Marked v16+ (GitHub Flavored Markdown) + highlight.js for code blocks
 - **Styling**: SCSS with CSS custom properties design system
 - **Editor font**: JetBrains Mono / Fira Code
+- **AI**: OpenAI SDK, Anthropic SDK, AWS Bedrock SDK (lazy-loaded in main process)
 
 ## Getting Started
 
@@ -132,6 +240,15 @@ To add macOS or Linux targets, edit the `build` section in `package.json`.
 | `Ctrl+Scroll` | Increase / decrease font size |
 | `F2` | Rename selected file (explorer focused) |
 | `Delete` | Delete selected file (explorer focused) |
+| `Ctrl+Shift+I` | Open / close AI chat panel |
+| `Ctrl+Shift+A` | Open inline AI bar (edit mode) |
+| `Tab` / `Enter` | Accept inline AI result |
+| `Escape` | Discard inline AI / close bar |
+| `↑` / `↓` (inline bar) | Navigate prompt history |
+| `Ctrl+B` | Bold |
+| `Ctrl+I` | Italic |
+| `Ctrl+K` | Insert link |
+| `` Ctrl+` `` | Inline code |
 
 ## License
 

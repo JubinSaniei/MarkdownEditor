@@ -1,0 +1,205 @@
+<div class="ai-settings-backdrop" (click)="onBackdropClick($event)">
+  <div class="ai-settings-modal">
+
+    <!-- Header -->
+    <div class="asm-header">
+      <h2 class="asm-title">AI Settings</h2>
+      <button class="asm-close-btn" (click)="close()" title="Close">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Active Provider -->
+    <div class="asm-active-provider">
+      <span class="asm-label">Active Provider</span>
+      <div class="asm-radio-group">
+        <label class="asm-radio">
+          <input type="radio" name="activeProvider" value="openai"
+                 [(ngModel)]="settings.activeProvider">
+          <span>OpenAI</span>
+        </label>
+        <label class="asm-radio">
+          <input type="radio" name="activeProvider" value="anthropic"
+                 [(ngModel)]="settings.activeProvider">
+          <span>Anthropic</span>
+        </label>
+        <label class="asm-radio">
+          <input type="radio" name="activeProvider" value="bedrock"
+                 [(ngModel)]="settings.activeProvider">
+          <span>AWS Bedrock</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="asm-tabs">
+      <button class="asm-tab" [class.active]="activeTab === 'openai'"
+              (click)="setActiveTab('openai')">OpenAI</button>
+      <button class="asm-tab" [class.active]="activeTab === 'anthropic'"
+              (click)="setActiveTab('anthropic')">Anthropic</button>
+      <button class="asm-tab" [class.active]="activeTab === 'bedrock'"
+              (click)="setActiveTab('bedrock')">AWS Bedrock</button>
+    </div>
+
+    <!-- OpenAI Panel -->
+    <div class="asm-panel" *ngIf="activeTab === 'openai'">
+      <div class="asm-field">
+        <label class="asm-field-label">
+          API Key
+          <span class="asm-key-saved" *ngIf="keyStatus.openaiKeySet">
+            Key saved{{ keyStatus.openaiEnvKey ? ' (overrides OPENAI_API_KEY)' : '' }}
+          </span>
+          <span class="asm-env-badge" *ngIf="!keyStatus.openaiKeySet && keyStatus.openaiEnvKey">
+            Using OPENAI_API_KEY
+          </span>
+        </label>
+        <div class="asm-key-row">
+          <input class="asm-input asm-key-input"
+                 [type]="showOpenaiKey ? 'text' : 'password'"
+                 placeholder="sk-... (leave empty to keep existing)"
+                 [(ngModel)]="openaiKeyInput">
+          <button class="asm-icon-btn" (click)="showOpenaiKey = !showOpenaiKey"
+                  [title]="showOpenaiKey ? 'Hide key' : 'Show key'">
+            <svg *ngIf="!showOpenaiKey" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg *ngIf="showOpenaiKey" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+              <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+          <button class="asm-delete-btn" *ngIf="keyStatus.openaiKeySet"
+                  (click)="deleteKey('openai')" title="Delete saved key">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
+        <p class="asm-env-hint" *ngIf="!keyStatus.openaiKeySet && !keyStatus.openaiEnvKey">
+          Or set the <code>OPENAI_API_KEY</code> environment variable
+        </p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Base URL <span class="asm-hint">(optional — leave empty for default)</span></label>
+        <input class="asm-input" type="text"
+               placeholder="https://api.openai.com/v1"
+               [(ngModel)]="settings.openai.baseUrl">
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Model</label>
+        <input class="asm-input" type="text"
+               placeholder="gpt-4o"
+               [(ngModel)]="settings.openai.model">
+      </div>
+    </div>
+
+    <!-- Anthropic Panel -->
+    <div class="asm-panel" *ngIf="activeTab === 'anthropic'">
+      <div class="asm-field">
+        <label class="asm-field-label">
+          API Key
+          <span class="asm-key-saved" *ngIf="keyStatus.anthropicKeySet">
+            Key saved{{ keyStatus.anthropicEnvKey ? ' (overrides ANTHROPIC_API_KEY)' : '' }}
+          </span>
+          <span class="asm-env-badge" *ngIf="!keyStatus.anthropicKeySet && keyStatus.anthropicEnvKey">
+            Using ANTHROPIC_API_KEY
+          </span>
+        </label>
+        <div class="asm-key-row">
+          <input class="asm-input asm-key-input"
+                 [type]="showAnthropicKey ? 'text' : 'password'"
+                 placeholder="sk-ant-... (leave empty to keep existing)"
+                 [(ngModel)]="anthropicKeyInput">
+          <button class="asm-icon-btn" (click)="showAnthropicKey = !showAnthropicKey"
+                  [title]="showAnthropicKey ? 'Hide key' : 'Show key'">
+            <svg *ngIf="!showAnthropicKey" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg *ngIf="showAnthropicKey" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+              <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+          <button class="asm-delete-btn" *ngIf="keyStatus.anthropicKeySet"
+                  (click)="deleteKey('anthropic')" title="Delete saved key">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
+        <p class="asm-env-hint" *ngIf="!keyStatus.anthropicKeySet && !keyStatus.anthropicEnvKey">
+          Or set the <code>ANTHROPIC_API_KEY</code> environment variable
+        </p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Model</label>
+        <input class="asm-input" type="text"
+               placeholder="claude-sonnet-4-5"
+               [(ngModel)]="settings.anthropic.model">
+      </div>
+    </div>
+
+    <!-- Bedrock Panel -->
+    <div class="asm-panel" *ngIf="activeTab === 'bedrock'">
+      <div class="asm-field">
+        <label class="asm-field-label">AWS Profile</label>
+        <input class="asm-input" type="text"
+               placeholder="default"
+               [(ngModel)]="settings.bedrock.profile">
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Region</label>
+        <input class="asm-input" type="text"
+               placeholder="us-east-1"
+               [(ngModel)]="settings.bedrock.region">
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Model ID</label>
+        <input class="asm-input" type="text"
+               placeholder="anthropic.claude-3-5-sonnet-20241022-v2:0"
+               [(ngModel)]="settings.bedrock.modelId">
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div class="asm-error" *ngIf="saveError">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor">
+        <path d="M7 1L1 13h12L7 1zm0 3v4M7 10h.01"/>
+      </svg>
+      {{ saveError }}
+    </div>
+
+    <!-- Footer -->
+    <div class="asm-footer">
+      <button class="asm-btn asm-btn-cancel" (click)="close()">Cancel</button>
+      <button class="asm-btn asm-btn-save" (click)="save()" [disabled]="isSaving">
+        {{ isSaving ? 'Saving…' : 'Save' }}
+      </button>
+    </div>
+
+  </div>
+</div>

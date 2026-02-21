@@ -8,6 +8,8 @@ import { FileExplorerComponent } from './components/file-explorer/file-explorer.
 import { MarkdownEditorComponent } from './components/markdown-editor/markdown-editor.component';
 import { MarkdownPreviewComponent } from './components/markdown-preview/markdown-preview.component';
 import { ThemeService } from './services/theme.service';
+import { AiSettingsComponent } from './components/ai-settings/ai-settings.component';
+import { AiPanelComponent } from './components/ai-panel/ai-panel.component';
 
 function initializeTheme(themeService: ThemeService) {
   return () => {
@@ -21,7 +23,9 @@ function initializeTheme(themeService: ThemeService) {
     AppComponent,
     FileExplorerComponent,
     MarkdownEditorComponent,
-    MarkdownPreviewComponent
+    MarkdownPreviewComponent,
+    AiSettingsComponent,
+    AiPanelComponent
   ],
   imports: [
     BrowserModule,

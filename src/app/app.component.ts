@@ -10,6 +10,7 @@ import { ThemeService } from './services/theme.service';
 import { ScrollSyncService } from './services/scroll-sync.service';
 import { SearchService } from './services/search.service';
 import { SearchState, SearchMode, SearchOptions } from './interfaces/search.interface';
+import { AiSettingsService } from './services/ai-settings.service';
 import { MarkdownEditorComponent } from './components/markdown-editor/markdown-editor.component';
 import { MarkdownPreviewComponent } from './components/markdown-preview/markdown-preview.component';
 
@@ -175,6 +176,14 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Save Dropdown ─────────────────────────────────────────
   showSaveDropdown: boolean = false;
 
+  // ── AI Settings ───────────────────────────────────────────
+  showAiSettings: boolean = false;
+
+  // ── AI Panel ──────────────────────────────────────────────
+  showAiPanel: boolean = false;
+  aiPanelWidth: number = 300;
+  isDraggingAiPanel: boolean = false;
+
   // ── Font Size ─────────────────────────────────────────────
   fontSize: number = 13;
   private readonly FONT_SIZE_MIN = 10;
@@ -198,6 +207,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     private themeService: ThemeService,
     private scrollSyncService: ScrollSyncService,
     private searchService: SearchService,
+    private aiSettingsService: AiSettingsService,
     private ngZone: NgZone
   ) {}
 
@@ -855,6 +865,44 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Save Dropdown ─────────────────────────────────────────
 
+  openAiSettings(): void  { this.showAiSettings = true; }
+  closeAiSettings(): void { this.showAiSettings = false; }
+
+  toggleAiPanel(): void { this.showAiPanel = !this.showAiPanel; }
+  closeAiPanel(): void  { this.showAiPanel = false; }
+
+  onAiPanelDividerMouseDown(event: MouseEvent) {
+    event.preventDefault();
+    this.isDraggingAiPanel = true;
+    const startX = event.clientX;
+    const startWidth = this.aiPanelWidth;
+
+    const moveHandler = (e: MouseEvent) => {
+      const delta = startX - e.clientX;
+      this.aiPanelWidth = Math.max(220, Math.min(640, startWidth + delta));
+    };
+
+    const upHandler = () => {
+      this.isDraggingAiPanel = false;
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+      this.saveSettings();
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+  }
+
+  insertAiText(text: string): void {
+    const tab = this.activeTab;
+    if (!tab || tab.readOnly) return;
+    const separator = tab.content.length > 0 && !tab.content.endsWith('\n') ? '\n\n' : '';
+    tab.content = tab.content + separator + text;
+    tab.isDirty = true;
+    tab.isPreview = false;
+    this.updateDirtyState();
+  }
+
   toggleSaveDropdown() {
     this.showSaveDropdown = !this.showSaveDropdown;
   }
@@ -909,6 +957,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Keyboard Shortcuts ────────────────────────────────────
 
   onGlobalKeyDown(event: KeyboardEvent) {
+    if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'i') {
+      event.preventDefault();
+      this.toggleAiPanel();
+      return;
+    }
     if (event.ctrlKey && event.key === 's') {
       event.preventDefault();
       this.saveFile();
@@ -948,11 +1001,14 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   onSearchKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       event.preventDefault();
+      event.stopPropagation();
       event.shiftKey ? this.findPrevious() : this.findNext();
     } else if (event.key === 'F3') {
       event.preventDefault();
+      event.stopPropagation();
       event.shiftKey ? this.findPrevious() : this.findNext();
     } else if (event.key === 'Escape') {
+      event.stopPropagation();
       this.closeSearch();
     } else if (event.key === 'Tab' && !event.shiftKey && this.isReplaceVisible) {
       event.preventDefault();
@@ -1106,6 +1162,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       if (typeof s.groupSplitWidth === 'number') {
         this.groupSplitWidth = Math.max(15, Math.min(85, s.groupSplitWidth));
       }
+      if (typeof s.aiPanelWidth === 'number') {
+        this.aiPanelWidth = Math.max(220, Math.min(640, s.aiPanelWidth));
+      }
 
       if (Array.isArray(s.groups) && s.groups.length > 0) {
         // New multi-group format
@@ -1149,6 +1208,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       recentFiles: this.recentFiles,
       fontSize: this.fontSize,
       groupSplitWidth: this.groupSplitWidth,
+      aiPanelWidth: this.aiPanelWidth,
       activeGroupId: this.activeGroupId,
       groups: this.groups.map(g => ({
         id: g.id,

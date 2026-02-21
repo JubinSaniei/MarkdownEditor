@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -33,6 +33,34 @@ const changeTimers = new Map();
 // Directory watcher state
 const dirWatchers = new Map();
 const dirChangeTimers = new Map();
+
+// ── AI key storage ────────────────────────────────────────────
+const activeStreams = new Map(); // requestId -> AbortController
+
+function getAiKeysPath() {
+  return path.join(app.getPath('userData'), 'ai-keys.json');
+}
+function loadAiKeys() {
+  try { return JSON.parse(fsSync.readFileSync(getAiKeysPath(), 'utf-8')); }
+  catch (_) { return {}; }
+}
+function saveAiKeys(keys) {
+  fsSync.writeFileSync(getAiKeysPath(), JSON.stringify(keys), 'utf-8');
+}
+const AI_ENV_VARS = { openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY' };
+
+async function getDecryptedKey(provider) {
+  // Priority 1: safeStorage key (user-saved key takes precedence over env var)
+  if (safeStorage.isEncryptionAvailable()) {
+    const keys = loadAiKeys();
+    if (keys[provider]) {
+      try { return safeStorage.decryptString(Buffer.from(keys[provider], 'base64')); }
+      catch (_) {}
+    }
+  }
+  // Priority 2: environment variable fallback (cross-platform)
+  return process.env[AI_ENV_VARS[provider]] || '';
+}
 
 // File opened via "Open with" or command-line argument
 let pendingOpenFile = null;
@@ -545,3 +573,137 @@ ipcMain.handle('get-initial-file', () => {
   pendingOpenFile = null;   // consume it so re-opens don't repeat
   return file;
 });
+
+// ============================================================
+// IPC Handlers — AI Key Management (safeStorage)
+// ============================================================
+
+ipcMain.handle('ai-key-set', (event, provider, key) => {
+  if (!safeStorage.isEncryptionAvailable())
+    return { success: false, error: 'OS encryption not available' };
+  const keys = loadAiKeys();
+  keys[provider] = safeStorage.encryptString(key).toString('base64');
+  saveAiKeys(keys);
+  return { success: true };
+});
+
+ipcMain.handle('ai-key-get', async (event, provider) => getDecryptedKey(provider));
+
+ipcMain.handle('ai-key-delete', (event, provider) => {
+  const keys = loadAiKeys();
+  delete keys[provider];
+  saveAiKeys(keys);
+  return { success: true };
+});
+
+ipcMain.handle('ai-key-status', () => {
+  const keys = loadAiKeys();
+  return {
+    openaiKeySet:     !!keys['openai'],
+    anthropicKeySet:  !!keys['anthropic'],
+    openaiEnvKey:     !!process.env[AI_ENV_VARS['openai']],
+    anthropicEnvKey:  !!process.env[AI_ENV_VARS['anthropic']],
+  };
+});
+
+// ============================================================
+// IPC Handlers — AI Streaming
+// ============================================================
+
+ipcMain.on('ai-stream-start', async (event, payload) => {
+  const { requestId, provider } = payload;
+  const ac = new AbortController();
+  activeStreams.set(requestId, ac);
+  const send  = (type, text, error) =>
+    event.sender.send('ai-stream-chunk', { requestId, type, text, error });
+  try {
+    if      (provider === 'openai')    await streamOpenAi(payload, ac.signal, send);
+    else if (provider === 'anthropic') await streamAnthropic(payload, ac.signal, send);
+    else if (provider === 'bedrock')   await streamBedrock(payload, ac.signal, send);
+    else send('error', undefined, `Unknown provider: ${provider}`);
+  } catch (err) {
+    if (!ac.signal.aborted) send('error', undefined, err.message || 'Stream error');
+  } finally {
+    activeStreams.delete(requestId);
+  }
+});
+
+ipcMain.handle('ai-stream-cancel', (event, requestId) => {
+  const ac = activeStreams.get(requestId);
+  if (ac) { ac.abort(); activeStreams.delete(requestId); }
+});
+
+// ============================================================
+// AI Provider Stream Functions
+// ============================================================
+
+async function streamOpenAi(payload, signal, send) {
+  const openaiModule = require('openai');
+  const OpenAI = openaiModule.default || openaiModule;
+  const key = await getDecryptedKey('openai');
+  const client = new OpenAI({
+    apiKey: key,
+    ...(payload.openaiBaseUrl ? { baseURL: payload.openaiBaseUrl } : {})
+  });
+  const history = (payload.history || []).map(m => ({ role: m.role, content: m.content }));
+  const stream = await client.chat.completions.create({
+    model: payload.openaiModel || 'gpt-4o',
+    messages: [
+      ...(payload.systemPrompt ? [{ role: 'system', content: payload.systemPrompt }] : []),
+      ...history,
+      { role: 'user', content: payload.prompt }
+    ],
+    stream: true,
+  }, { signal });
+  for await (const chunk of stream) {
+    if (signal.aborted) break;
+    const text = chunk.choices?.[0]?.delta?.content ?? '';
+    if (text) send('chunk', text);
+  }
+  send('done');
+}
+
+async function streamAnthropic(payload, signal, send) {
+  const anthropicModule = require('@anthropic-ai/sdk');
+  const Anthropic = anthropicModule.default || anthropicModule;
+  const key = await getDecryptedKey('anthropic');
+  const client = new Anthropic({ apiKey: key });
+  const history = (payload.history || []).map(m => ({ role: m.role, content: m.content }));
+  const stream = client.messages.stream({
+    model: payload.anthropicModel || 'claude-sonnet-4-5',
+    max_tokens: 4096,
+    ...(payload.systemPrompt ? { system: payload.systemPrompt } : {}),
+    messages: [...history, { role: 'user', content: payload.prompt }],
+  });
+  for await (const event of stream) {
+    if (signal.aborted) break;
+    if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta')
+      send('chunk', event.delta.text);
+  }
+  send('done');
+}
+
+async function streamBedrock(payload, signal, send) {
+  const { BedrockRuntimeClient, ConverseStreamCommand } =
+    require('@aws-sdk/client-bedrock-runtime');
+  const { fromIni } = require('@aws-sdk/credential-providers');
+  const client = new BedrockRuntimeClient({
+    region: payload.bedrockRegion || 'us-east-1',
+    credentials: fromIni({ profile: payload.bedrockProfile || 'default' }),
+  });
+  const history = (payload.history || []).map(m => ({
+    role: m.role,
+    content: [{ text: m.content }]
+  }));
+  const response = await client.send(new ConverseStreamCommand({
+    modelId: payload.bedrockModelId || 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    messages: [...history, { role: 'user', content: [{ text: payload.prompt }] }],
+    ...(payload.systemPrompt ? { system: [{ text: payload.systemPrompt }] } : {}),
+  }), { abortSignal: signal });
+  for await (const event of response.stream) {
+    if (signal.aborted) break;
+    const text = event.contentBlockDelta?.delta?.text ?? '';
+    if (text) send('chunk', text);
+  }
+  send('done');
+}

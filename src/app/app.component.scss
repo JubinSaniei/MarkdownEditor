@@ -396,9 +396,23 @@
   }
 }
 
-.app-shell.split-dragging {
+.app-shell.split-dragging,
+.app-shell.ai-panel-dragging {
   user-select: none;
   cursor: col-resize;
+}
+
+// ── AI Panel Divider ──────────────────────────────────────────
+.ai-panel-divider {
+  flex: 0 0 5px;
+  background: var(--border-subtle);
+  cursor: col-resize;
+  transition: background var(--transition-fast);
+  z-index: 1;
+
+  &:hover, &.dragging {
+    background: var(--accent-muted);
+  }
 }
 
 // ── Tab Bar ───────────────────────────────────────────────────

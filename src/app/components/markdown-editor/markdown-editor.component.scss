@@ -258,6 +258,7 @@
   position: relative;
   display: flex;
   overflow: hidden;
+  background: var(--bg-secondary);
 }
 
 // ── Search highlight clip + backdrop ──────────────────────────
@@ -278,7 +279,7 @@
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
   line-height: 1.615;
-  color: transparent;
+  color: var(--text-primary);
   background: transparent;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -288,17 +289,369 @@
   will-change: transform;
 }
 
-// Highlight spans are injected via innerHTML (not Angular template), so they
-// don't receive the component's _ngcontent attribute. Use ::ng-deep to match them.
-:host ::ng-deep .highlight-clip .search-highlight {
-  background-color: rgba(255, 214, 0, .45);
-  color: transparent;
-  border-radius: 2px;
+// Highlight and syntax spans are injected via innerHTML (not Angular template),
+// so they don't receive the component's _ngcontent attribute. Use ::ng-deep.
+:host ::ng-deep .highlight-clip {
+  .search-highlight {
+    background-color: rgba(255, 214, 0, .45);
+    border-radius: 2px;
 
-  &.current {
-    background-color: rgba(255, 140, 0, .65);
-    box-shadow: 0 0 0 1px rgba(255, 100, 0, .7);
+    &.current {
+      background-color: rgba(255, 140, 0, .65);
+      box-shadow: 0 0 0 1px rgba(255, 100, 0, .7);
+    }
   }
+
+  // ── Markdown syntax colors ─────────────────────────────────
+  .syn-h1, .syn-h2 { color: var(--syn-heading); font-weight: 700; }
+  .syn-h3          { color: var(--syn-heading); font-weight: 600; }
+  .syn-h4, .syn-h5, .syn-h6 { color: var(--syn-heading); }
+
+  .syn-marker      { color: var(--syn-punct); }
+  .syn-fence       { color: var(--syn-code); opacity: .85; }
+  .syn-code-line   { color: var(--syn-code); }
+  .syn-inline-code { color: var(--syn-code); }
+
+  .syn-bold        { font-weight: 700; }
+  .syn-italic      { font-style: italic; }
+
+  .syn-link-text   { color: var(--syn-link); }
+  .syn-url         { color: var(--syn-url); }
+  .syn-punct       { color: var(--syn-punct); }
+
+  .syn-bq-marker   { color: var(--accent); }
+  .syn-blockquote  { color: var(--text-secondary); font-style: italic; }
+
+  .syn-hr          { color: var(--text-tertiary); }
+  .syn-list-marker { color: var(--accent); }
+}
+
+// ── Inline AI Bar ─────────────────────────────────────────────
+
+// Glow on the editor textarea when inline AI is active
+.inline-ai-active .markdown-editor {
+  box-shadow: inset 0 0 0 2px var(--accent-muted);
+  transition: box-shadow var(--transition-fast);
+}
+
+.inline-ai-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--bg-primary);
+  border-top: 2px solid var(--accent-muted);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, .18);
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+}
+
+.iai-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  min-height: 30px;
+}
+
+.iai-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  opacity: .85;
+}
+
+.iai-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.iai-selection-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.iai-close-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  flex-shrink: 0;
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+  }
+}
+
+// ── Quick-action chips ─────────────────────────────────────────
+.iai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+
+.iai-chip {
+  padding: 2px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+
+  &:hover {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-color: var(--accent-muted);
+  }
+}
+
+// ── Input row ─────────────────────────────────────────────────
+.iai-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  flex-shrink: 0;
+}
+
+.iai-prompt-input {
+  flex: 1;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+
+  &::placeholder { color: var(--text-tertiary); }
+
+  &:focus {
+    border-color: var(--accent-muted);
+    box-shadow: 0 0 0 2px var(--accent-faint);
+  }
+
+  &:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+  }
+}
+
+.iai-send-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter var(--transition-fast), opacity var(--transition-fast);
+
+  &:hover:not(:disabled) { filter: brightness(1.1); }
+  &:disabled { opacity: .45; cursor: not-allowed; }
+}
+
+.iai-stop-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+}
+
+// ── Streaming preview ──────────────────────────────────────────
+.iai-preview {
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-secondary));
+  padding: 8px 12px;
+  overflow-y: auto;
+  max-height: 160px;
+  flex-shrink: 0;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--border-primary); border-radius: 2px; }
+}
+
+.iai-preview-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.iai-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: iai-blink 1s step-end infinite;
+}
+
+@keyframes iai-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+// ── Diff view (Before / After) ─────────────────────────────────
+.iai-diff {
+  display: flex;
+  border-top: 1px solid var(--border-subtle);
+  max-height: 180px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.iai-diff-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+  min-width: 0;
+
+  &::-webkit-scrollbar { width: 3px; }
+  &::-webkit-scrollbar-thumb { background: var(--border-primary); border-radius: 2px; }
+
+  &.iai-diff-before {
+    background: color-mix(in srgb, var(--danger) 5%, var(--bg-secondary));
+    border-right: 1px solid var(--border-subtle);
+    border-left: 3px solid color-mix(in srgb, var(--danger) 55%, transparent);
+  }
+
+  &.iai-diff-after {
+    background: color-mix(in srgb, #22c55e 5%, var(--bg-secondary));
+    border-left: 3px solid color-mix(in srgb, #22c55e 55%, transparent);
+  }
+}
+
+.iai-diff-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 5px;
+
+  .iai-diff-before & { color: var(--danger); }
+  .iai-diff-after  & { color: #22c55e; }
+}
+
+// ── Accept / Discard actions ───────────────────────────────────
+.iai-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  background: var(--bg-primary);
+}
+
+.iai-accept-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: filter var(--transition-fast);
+
+  &:hover { filter: brightness(1.1); }
+}
+
+.iai-discard-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
+}
+
+.iai-kbd-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+
+  kbd {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+}
+
+// ── Error ──────────────────────────────────────────────────────
+.iai-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+  flex-shrink: 0;
+
+  svg { flex-shrink: 0; }
 }
 
 // ── Textarea ──────────────────────────────────────────────────
@@ -312,25 +665,25 @@
   font-size: var(--editor-font-size);
   line-height: 1.615;
   resize: none;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: transparent;
+  color: transparent;
   z-index: 2;
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-y: scroll;
   overflow-x: hidden;
   box-sizing: border-box;
-  caret-color: var(--accent);
-  transition: background var(--transition-base);
+  caret-color: var(--text-primary);
 
   &::placeholder {
     color: var(--text-tertiary);
     font-style: italic;
   }
 
-  &.search-active {
-    background: transparent !important;
-    color: var(--text-primary) !important;
-    caret-color: var(--text-primary) !important;
+  // Keep text invisible in selection so the backdrop's syntax colors show
+  // through the semi-transparent selection tint instead of the raw text
+  &::selection {
+    background-color: rgba(100, 148, 237, 0.35);
+    color: transparent;
   }
 }

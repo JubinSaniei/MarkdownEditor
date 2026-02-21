@@ -96,6 +96,13 @@
   --warning-bg:       #fffbeb;
   --warning-border:   #fcd34d;
   --warning-text:     #92400e;
+
+  /* Markdown editor syntax colors */
+  --syn-heading:   #835c00;
+  --syn-code:      #1a6b33;
+  --syn-link:      #0055cc;
+  --syn-url:       #0065b5;
+  --syn-punct:     #8a8a8a;
 }
 
 /* ── Dark Theme (VS Code-inspired) ───────────────────────────── */
@@ -148,6 +155,13 @@
 
   /* Override status colors for dark */
   --success: #4ec9b0;
+
+  /* Markdown editor syntax colors */
+  --syn-heading:   #dcdcaa;
+  --syn-code:      #98c379;
+  --syn-link:      #61afef;
+  --syn-url:       #56b6c2;
+  --syn-punct:     #666666;
 }
 
 /* ── Dark statusbar ──────────────────────────────────────────── */

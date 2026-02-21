@@ -1,4 +1,4 @@
-<div class="app-shell" [class.split-dragging]="isDraggingSplit"
+<div class="app-shell" [class.split-dragging]="isDraggingSplit" [class.ai-panel-dragging]="isDraggingAiPanel"
      (click)="onGlobalClick($event)"
      (keydown)="onGlobalKeyDown($event)"
      (dragenter)="onDragEnter($event)"
@@ -126,6 +126,20 @@
           </button>
         </div>
       </div>
+
+      <!-- AI Panel toggle button -->
+      <button class="tb-btn icon-btn" (click)="toggleAiPanel()"
+              [class.active]="showAiPanel" title="AI Assistant (Ctrl+Shift+I)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8V4H8"/>
+          <rect width="16" height="12" x="4" y="8" rx="2"/>
+          <path d="M2 14h2"/>
+          <path d="M20 14h2"/>
+          <path d="M15 13v2"/>
+          <path d="M9 13v2"/>
+        </svg>
+      </button>
 
       <!-- Theme toggle -->
       <button class="tb-btn icon-btn" (click)="toggleTheme()" [title]="isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'">
@@ -420,6 +434,30 @@
     </footer>
 
   </div>
+
+  <!-- ── AI Panel resize divider ───────────────────────────── -->
+  <div class="ai-panel-divider"
+       *ngIf="showAiPanel"
+       [class.dragging]="isDraggingAiPanel"
+       (mousedown)="onAiPanelDividerMouseDown($event)"></div>
+
+  <!-- ── AI Panel (right sidebar) ──────────────────────────── -->
+  <app-ai-panel
+    *ngIf="showAiPanel"
+    [style.width.px]="aiPanelWidth"
+    [currentContent]="currentFileContent"
+    [currentFilePath]="currentFilePath"
+    [workspaceRoots]="workspaceRoots"
+    (insertText)="insertAiText($event)"
+    (openSettings)="openAiSettings()"
+    (closed)="closeAiPanel()">
+  </app-ai-panel>
+
+  <!-- ── AI Settings Modal ──────────────────────────────────── -->
+  <app-ai-settings
+    *ngIf="showAiSettings"
+    (closed)="closeAiSettings()">
+  </app-ai-settings>
 
   <!-- ── Drop Overlay ───────────────────────────────────────── -->
   <div class="drop-overlay" *ngIf="isDraggingFile">
