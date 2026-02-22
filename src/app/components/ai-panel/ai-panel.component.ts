@@ -81,6 +81,12 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
 
   private streamSub?: Subscription;
   private shouldScrollToBottom = false;
+  // True when the user has manually scrolled up during streaming.
+  // Auto-scroll is suspended until they return within SCROLL_RESUME_THRESHOLD
+  // of the bottom, or they send a new message.
+  private userScrolledUp = false;
+  private static readonly SCROLL_RESUME_THRESHOLD = 60; // px from bottom
+  private scrollListener: (() => void) | null = null;
 
   constructor(
     private aiService: AiService,
@@ -130,14 +136,30 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
   }
 
   ngAfterViewChecked(): void {
+    // Attach scroll listener the first time the container is available.
+    const el = this.messagesContainerRef?.nativeElement;
+    if (el && !this.scrollListener) {
+      this.scrollListener = () => {
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        this.userScrolledUp = distanceFromBottom > AiPanelComponent.SCROLL_RESUME_THRESHOLD;
+      };
+      el.addEventListener('scroll', this.scrollListener, { passive: true });
+    }
+
     if (this.shouldScrollToBottom) {
       this.shouldScrollToBottom = false;
-      this.scrollToBottom();
+      if (!this.userScrolledUp) {
+        this.scrollToBottom();
+      }
     }
   }
 
   ngOnDestroy(): void {
     this.streamSub?.unsubscribe();
+    const el = this.messagesContainerRef?.nativeElement;
+    if (el && this.scrollListener) {
+      el.removeEventListener('scroll', this.scrollListener);
+    }
   }
 
   onKeyDown(event: KeyboardEvent): void {
@@ -215,6 +237,7 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     this.promptText = '';
     this.isStreaming = true;
     this.streamingText = '';
+    this.userScrolledUp = false; // always follow a new conversation turn
     this.shouldScrollToBottom = true;
 
     const contextParts: string[] = [];

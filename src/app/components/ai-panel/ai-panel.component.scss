@@ -164,7 +164,10 @@
 }
 
 // ── Rendered markdown inside assistant messages ────────────────
-.aip-msg-md {
+// ::ng-deep is required because the content is injected via [innerHTML] and
+// Angular's emulated view encapsulation would otherwise prevent these rules
+// from matching the dynamically-created descendant elements.
+:host ::ng-deep .aip-msg-md {
   p { margin: 0 0 6px; &:last-child { margin-bottom: 0; } &:first-child { margin-top: 0; } }
 
   h1, h2, h3, h4, h5, h6 {
@@ -177,7 +180,8 @@
   h2 { font-size: 13.5px; }
   h3, h4, h5, h6 { font-size: 13px; }
 
-  ul, ol { margin: 4px 0; padding-left: 18px; }
+  ul { margin: 4px 0; padding-left: 20px; }
+  ol { margin: 4px 0; padding-left: 24px; }
   li { margin: 2px 0; }
   li > ul, li > ol { margin: 2px 0; }
 
