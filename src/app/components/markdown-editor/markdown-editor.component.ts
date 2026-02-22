@@ -743,15 +743,17 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     const textarea = this.editorElement.nativeElement;
     textarea.setSelectionRange(result.start, result.end);
 
-    const textBeforeSelection = textarea.value.substring(0, result.start);
-    const lineNumber = (textBeforeSelection.match(/\n/g) || []).length;
-
-    const style = window.getComputedStyle(textarea);
-    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
-    const targetScrollTop = lineNumber * lineHeight - textarea.clientHeight / 3;
+    // Use the proportion of the match position within the total text to
+    // derive the scroll target.  This handles line wrapping correctly
+    // (the old lineNumber * lineHeight formula broke in split mode).
+    const totalLines = (textarea.value.match(/\n/g) || []).length + 1;
+    const lineNumber = (textarea.value.substring(0, result.start).match(/\n/g) || []).length;
+    const lineRatio = lineNumber / Math.max(1, totalLines);
+    const maxScroll = textarea.scrollHeight - textarea.clientHeight;
+    const targetScrollTop = lineRatio * maxScroll - textarea.clientHeight / 3;
 
     textarea.scrollTo({
-      top: Math.max(0, targetScrollTop),
+      top: Math.max(0, Math.min(maxScroll, targetScrollTop)),
       behavior: 'smooth'
     });
   }
@@ -796,14 +798,20 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   private getVisibleLineRange(totalLines: number): [number, number] {
     if (!this.editorElement) return [0, totalLines - 1];
     const ta = this.editorElement.nativeElement;
-    const cs = window.getComputedStyle(ta);
-    const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
-    if (lineHeight <= 0) return [0, totalLines - 1];
 
-    const scrollTop = ta.scrollTop;
-    const viewHeight = ta.clientHeight;
-    const firstVisible = Math.floor(scrollTop / lineHeight);
-    const lastVisible = Math.ceil((scrollTop + viewHeight) / lineHeight);
+    // Use percentage-based calculation against actual scrollHeight so that
+    // line wrapping (white-space: pre-wrap) is handled correctly.  The old
+    // `scrollTop / lineHeight` formula counted *visual* lines, not content
+    // lines, which broke syntax highlighting in split mode where the narrower
+    // pane causes heavy wrapping.
+    const maxScroll = ta.scrollHeight - ta.clientHeight;
+    if (maxScroll <= 0) return [0, totalLines - 1]; // all content fits
+
+    const scrollRatio = ta.scrollTop / maxScroll;
+    const viewRatio = ta.clientHeight / Math.max(1, ta.scrollHeight);
+    const visibleCount = Math.ceil(viewRatio * totalLines);
+    const firstVisible = Math.floor(scrollRatio * (totalLines - visibleCount));
+    const lastVisible = firstVisible + visibleCount;
 
     const buf = MarkdownEditorComponent.VIEWPORT_BUFFER;
     return [
