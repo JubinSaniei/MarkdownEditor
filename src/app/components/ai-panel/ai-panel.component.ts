@@ -6,6 +6,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { Subscription } from 'rxjs';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 import { AiService } from '../../services/ai.service';
 import { AiSettingsService } from '../../services/ai-settings.service';
 import { ElectronService } from '../../services/electron.service';
@@ -90,7 +91,8 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
 
   renderMarkdown(content: string): SafeHtml {
     const html = panelMarked.parse(content) as string;
-    return this.sanitizer.bypassSecurityTrustHtml(html);
+    const clean = DOMPurify.sanitize(html);
+    return this.sanitizer.bypassSecurityTrustHtml(clean);
   }
 
   get activeProvider(): AiProvider {

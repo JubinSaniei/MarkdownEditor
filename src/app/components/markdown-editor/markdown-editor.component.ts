@@ -1,5 +1,6 @@
 import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnChanges, OnDestroy, HostListener, SimpleChanges } from '@angular/core';
 import { Subscription } from 'rxjs';
+import hljs from 'highlight.js';
 import { AiService } from '../../services/ai.service';
 import { AiSettingsService } from '../../services/ai-settings.service';
 
@@ -19,8 +20,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   @ViewChild('cheatsheetPanel') cheatsheetPanelEl!: ElementRef<HTMLDivElement>;
   @ViewChild('cheatsheetBtn') cheatsheetBtnEl!: ElementRef<HTMLButtonElement>;
   @ViewChild('inlineAiInput') inlineAiInputRef?: ElementRef<HTMLInputElement>;
+  @ViewChild('searchOverlay') searchOverlayEl?: ElementRef<HTMLDivElement>;
 
   showCheatsheet = false;
+  spellcheckEnabled = false;
 
   inlineAi: {
     visible: boolean;
@@ -95,6 +98,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
         if (this.lineNumbersEl) {
           this.lineNumbersEl.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
         }
+        // Re-highlight for new viewport range on scroll
+        this.scheduleSyntaxUpdate();
       });
 
       // Match the backdrop width to the textarea's content width (excludes scrollbar)
@@ -127,32 +132,38 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
   // ── Scroll / layout sync ─────────────────────────────────────
 
-  /** Move the backdrop via CSS transform so it stays aligned with the textarea. */
+  /** Move the backdrop and search overlay via CSS transform so they stay aligned with the textarea. */
   private syncScroll() {
     if (!this.editorElement || !this.highlightBackdrop) return;
     const ta = this.editorElement.nativeElement;
-    this.highlightBackdrop.nativeElement.style.transform = `translateY(${-ta.scrollTop}px)`;
+    const t = `translateY(${-ta.scrollTop}px)`;
+    this.highlightBackdrop.nativeElement.style.transform = t;
+    if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.style.transform = t;
   }
 
-  /** Set the backdrop width to the textarea's clientWidth (which excludes the scrollbar). */
+  /** Set the backdrop and search overlay width to the textarea's clientWidth (which excludes the scrollbar). */
   private syncBackdropWidth() {
     if (!this.editorElement || !this.highlightBackdrop) return;
     const ta = this.editorElement.nativeElement;
-    this.highlightBackdrop.nativeElement.style.width = ta.clientWidth + 'px';
+    const w = ta.clientWidth + 'px';
+    this.highlightBackdrop.nativeElement.style.width = w;
+    if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.style.width = w;
   }
 
-  /** Copy computed text properties from the textarea to the backdrop. */
+  /** Copy computed text properties from the textarea to the backdrop and search overlay. */
   private syncBackdropStyles() {
     if (!this.editorElement || !this.highlightBackdrop) return;
     const cs = window.getComputedStyle(this.editorElement.nativeElement);
-    const bd = this.highlightBackdrop.nativeElement.style;
-    bd.lineHeight = cs.lineHeight;
-    bd.fontFamily = cs.fontFamily;
-    bd.fontSize = cs.fontSize;
-    bd.paddingTop = cs.paddingTop;
-    bd.paddingRight = cs.paddingRight;
-    bd.paddingBottom = cs.paddingBottom;
-    bd.paddingLeft = cs.paddingLeft;
+    for (const el of [this.highlightBackdrop.nativeElement, this.searchOverlayEl?.nativeElement]) {
+      if (!el) continue;
+      el.style.lineHeight   = cs.lineHeight;
+      el.style.fontFamily   = cs.fontFamily;
+      el.style.fontSize     = cs.fontSize;
+      el.style.paddingTop    = cs.paddingTop;
+      el.style.paddingRight  = cs.paddingRight;
+      el.style.paddingBottom = cs.paddingBottom;
+      el.style.paddingLeft   = cs.paddingLeft;
+    }
   }
 
   // ── Content ──────────────────────────────────────────────────
@@ -645,6 +656,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     this.showCheatsheet = !this.showCheatsheet;
   }
 
+  toggleSpellcheck() {
+    this.spellcheckEnabled = !this.spellcheckEnabled;
+  }
+
   @HostListener('document:mousedown', ['$event'])
   onDocMouseDown(event: MouseEvent) {
     if (!this.showCheatsheet) return;
@@ -659,17 +674,19 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   // ── Private helpers ──────────────────────────────────────────
 
   private updateBackdropHighlights(query: string, results: any[], currentIndex: number) {
-    if (!this.highlightBackdrop || !this.editorElement) return;
+    if (!this.searchOverlayEl || !this.editorElement) return;
 
-    const backdrop = this.highlightBackdrop.nativeElement;
+    const overlay = this.searchOverlayEl.nativeElement;
 
     if (!query || results.length === 0) {
-      this.updateSyntaxBackdrop();
+      overlay.innerHTML = '';
       return;
     }
 
-    // Build highlighted HTML, escaping ALL content to prevent
-    // raw < > & from breaking the backdrop layout.
+    // Build the overlay HTML: the full content as transparent text with
+    // search-highlight spans carrying only the yellow background.
+    // Text color is transparent (set in CSS) so only the background shows,
+    // leaving the syntax-colored backdrop fully visible underneath.
     const sortedMatches = [...results].sort((a, b) => a.start - b.start);
     let html = '';
     let lastEnd = 0;
@@ -688,9 +705,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
     html += this.escapeHtml(this.content.substring(lastEnd));
 
-    backdrop.innerHTML = html;
-
-    // Sync width and position after the DOM update
+    overlay.innerHTML = html;
     this.syncBackdropWidth();
     this.syncScroll();
   }
@@ -715,7 +730,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   }
 
   private clearHighlights() {
-    this.updateSyntaxBackdrop();
+    if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.innerHTML = '';
   }
 
   private escapeHtml(text: string): string {
@@ -743,25 +758,75 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     this.syncScroll();
   }
 
+  /**
+   * Returns the [firstVisible, lastVisible] line range currently shown in the
+   * textarea viewport, plus a buffer of VIEWPORT_BUFFER lines on each side.
+   */
+  private static readonly VIEWPORT_BUFFER = 30;
+
+  private getVisibleLineRange(totalLines: number): [number, number] {
+    if (!this.editorElement) return [0, totalLines - 1];
+    const ta = this.editorElement.nativeElement;
+    const cs = window.getComputedStyle(ta);
+    const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+    if (lineHeight <= 0) return [0, totalLines - 1];
+
+    const scrollTop = ta.scrollTop;
+    const viewHeight = ta.clientHeight;
+    const firstVisible = Math.floor(scrollTop / lineHeight);
+    const lastVisible = Math.ceil((scrollTop + viewHeight) / lineHeight);
+
+    const buf = MarkdownEditorComponent.VIEWPORT_BUFFER;
+    return [
+      Math.max(0, firstVisible - buf),
+      Math.min(totalLines - 1, lastVisible + buf)
+    ];
+  }
+
   private syntaxHighlight(text: string): string {
     const lines = text.replace(/\r/g, '').split('\n');
+    const [vpStart, vpEnd] = this.getVisibleLineRange(lines.length);
     const out: string[] = [];
     let inFence = false;
+    let fenceLang = '';
+    let fenceBuffer: string[] = [];
+    let fenceStartIdx = 0;
 
-    for (const raw of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i];
       const esc = this.escapeHtml(raw);
 
       // Fenced code block fence line (``` or ~~~)
       if (/^(`{3,}|~{3,})/.test(raw)) {
-        if (!inFence) inFence = true;
-        else inFence = false;
-        out.push(`<span class="syn-fence">${esc}</span>`);
+        if (!inFence) {
+          inFence = true;
+          fenceLang = raw.replace(/^[`~]+/, '').trim().split(/\s/)[0] || '';
+          fenceBuffer = [];
+          fenceStartIdx = i + 1;
+        } else {
+          // Closing fence — flush the buffered code block
+          this.flushCodeBlock(out, fenceBuffer, fenceLang, fenceStartIdx, vpStart, vpEnd);
+          inFence = false;
+          fenceLang = '';
+          fenceBuffer = [];
+        }
+        if (i >= vpStart && i <= vpEnd) {
+          out.push(`<span class="syn-fence">${esc}</span>`);
+        } else {
+          out.push(esc);
+        }
         continue;
       }
 
-      // Inside fenced code block
+      // Inside fenced code block — buffer the line
       if (inFence) {
-        out.push(`<span class="syn-code-line">${esc}</span>`);
+        fenceBuffer.push(raw);
+        continue;
+      }
+
+      // Off-viewport lines: skip expensive regex work, emit plain escaped text
+      if (i < vpStart || i > vpEnd) {
+        out.push(esc);
         continue;
       }
 
@@ -830,7 +895,57 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
       out.push(this.inlineHighlight(raw));
     }
 
+    // Unclosed fence at end of file — flush remaining buffered lines
+    if (inFence && fenceBuffer.length > 0) {
+      this.flushCodeBlock(out, fenceBuffer, fenceLang, fenceStartIdx, vpStart, vpEnd);
+    }
+
     return out.join('\n');
+  }
+
+  /**
+   * Highlight a buffered fenced code block with highlight.js and push
+   * the result lines into the output array.
+   */
+  private flushCodeBlock(
+    out: string[], buffer: string[], lang: string,
+    startIdx: number, vpStart: number, vpEnd: number
+  ): void {
+    // Check if any part of the block is visible
+    const endIdx = startIdx + buffer.length - 1;
+    const anyVisible = endIdx >= vpStart && startIdx <= vpEnd;
+
+    if (!anyVisible || buffer.length === 0) {
+      // Off-viewport — emit plain escaped lines
+      for (const line of buffer) {
+        out.push(this.escapeHtml(line));
+      }
+      return;
+    }
+
+    // Run highlight.js on the whole block
+    const code = buffer.join('\n');
+    let highlighted: string;
+    try {
+      if (lang && hljs.getLanguage(lang)) {
+        highlighted = hljs.highlight(code, { language: lang }).value;
+      } else {
+        highlighted = hljs.highlightAuto(code).value;
+      }
+    } catch (_) {
+      highlighted = this.escapeHtml(code);
+    }
+
+    // Split back into lines and wrap each in a code-line span
+    const hljsLines = highlighted.split('\n');
+    for (let j = 0; j < hljsLines.length; j++) {
+      const lineIdx = startIdx + j;
+      if (lineIdx >= vpStart && lineIdx <= vpEnd) {
+        out.push(`<span class="syn-code-line">${hljsLines[j]}</span>`);
+      } else {
+        out.push(this.escapeHtml(buffer[j] ?? ''));
+      }
+    }
   }
 
   private inlineHighlight(raw: string): string {
@@ -853,6 +968,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     s = s.replace(/\[([^\]\n]*)\]\(([^)\n]*)\)/g,
       (_m, text, url) =>
         `<span class="syn-punct">[</span><span class="syn-link-text">${text}</span><span class="syn-punct">](</span><span class="syn-url">${url}</span><span class="syn-punct">)</span>`
+    );
+
+    // Strikethrough (~~…~~)
+    s = s.replace(/~~(.+?)~~/g,
+      (_m, inner) =>
+        `<span class="syn-marker">~~</span><span class="syn-strike">${inner}</span><span class="syn-marker">~~</span>`
     );
 
     // Bold (**…** then __…__)

@@ -5,6 +5,7 @@ import {
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 import { ElectronService } from '../../services/electron.service';
 
 @Component({
@@ -24,6 +25,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   private needsListeners = false;
   private lastHighlightQuery: string = '';
   private lastHighlightCount: number = 0;
+  private highlightDebounceTimer: any = null;
 
   // Event delegation handler bound to this instance
   private copyClickHandler = (event: Event) => {
@@ -128,6 +130,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   }
 
   ngOnDestroy() {
+    if (this.highlightDebounceTimer) clearTimeout(this.highlightDebounceTimer);
     const el = this.previewElement?.nativeElement;
     if (el) {
       el.removeEventListener('click', this.copyClickHandler);
@@ -148,9 +151,10 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
   highlightSearchResults(query: string, results: any[], currentIndex: number) {
     if (!query || !results.length) {
+      if (this.highlightDebounceTimer) { clearTimeout(this.highlightDebounceTimer); this.highlightDebounceTimer = null; }
       this.lastHighlightQuery = '';
       this.lastHighlightCount = 0;
-      this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
+      this.htmlContent = this.sanitizeAndTrust(this.originalHtmlContent);
       return;
     }
 
@@ -161,16 +165,21 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
       return;
     }
 
-    this.lastHighlightQuery = query;
-    this.lastHighlightCount = results.length;
+    // Debounce the expensive DOM tree-walk to avoid jank on rapid query changes
+    if (this.highlightDebounceTimer) clearTimeout(this.highlightDebounceTimer);
+    this.highlightDebounceTimer = setTimeout(() => {
+      this.highlightDebounceTimer = null;
+      this.lastHighlightQuery = query;
+      this.lastHighlightCount = results.length;
 
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = this.originalHtmlContent;
-    this.highlightMatches(tempDiv, query, currentIndex);
-    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(tempDiv.innerHTML);
-    this.needsListeners = true;
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = this.originalHtmlContent;
+      this.highlightMatches(tempDiv, query, currentIndex);
+      this.htmlContent = this.sanitizeAndTrust(tempDiv.innerHTML);
+      this.needsListeners = true;
 
-    requestAnimationFrame(() => this.scrollToCurrentMatch());
+      requestAnimationFrame(() => this.scrollToCurrentMatch());
+    }, 150);
   }
 
   scrollToTop() {
@@ -186,7 +195,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   clearSearchHighlights() {
     this.lastHighlightQuery = '';
     this.lastHighlightCount = 0;
-    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
+    this.htmlContent = this.sanitizeAndTrust(this.originalHtmlContent);
   }
 
   /**
@@ -196,7 +205,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   closeSearch() {
     this.lastHighlightQuery = '';
     this.lastHighlightCount = 0;
-    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
+    this.htmlContent = this.sanitizeAndTrust(this.originalHtmlContent);
     this.previewElement?.nativeElement.focus();
   }
 
@@ -303,7 +312,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     } else {
       this.originalHtmlContent = '<p class="empty-preview">Preview will appear here…</p>';
     }
-    this.htmlContent = this.sanitizer.bypassSecurityTrustHtml(this.originalHtmlContent);
+    this.htmlContent = this.sanitizeAndTrust(this.originalHtmlContent);
   }
 
   private postProcessHtml(html: string): string {
@@ -317,5 +326,14 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   private escapeHtml(text: string): string {
     const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     return text.replace(/[&<>"']/g, m => map[m]);
+  }
+
+  /** Sanitize HTML with DOMPurify before bypassing Angular's sanitizer. */
+  private sanitizeAndTrust(html: string): SafeHtml {
+    const clean = DOMPurify.sanitize(html, {
+      ADD_TAGS: ['mark'],
+      ADD_ATTR: ['data-code-id', 'class', 'id'],
+    });
+    return this.sanitizer.bypassSecurityTrustHtml(clean);
   }
 }

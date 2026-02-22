@@ -83,8 +83,10 @@
               [class.active]="autoSaveEnabled"
               (click)="toggleAutoSave()"
               [title]="autoSaveEnabled ? 'Auto-save ON — click to disable' : 'Auto-save OFF — click to enable'">
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
-          <path d="M3 1h7.5L13 3.5V13a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1zm7 1v3H4V2h6zm-2 6a2 2 0 110 4 2 2 0 010-4z"/>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10"/>
+          <path d="M12 6v6l3 3"/>
+          <path d="M18 2v4h4"/>
         </svg>
       </button>
 
@@ -95,14 +97,6 @@
               title="Search (Ctrl+F)">
         <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
           <path d="M10 6.5a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0zm-.7 3.92l2.64 2.64-.7.7-2.64-2.63A4.5 4.5 0 1110 6.5a4.48 4.48 0 01-.7 3.92z"/>
-        </svg>
-      </button>
-
-      <!-- New file button -->
-      <button class="tb-btn icon-btn" (click)="newFile()" title="New File (Ctrl+N)">
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
-          <path d="M8.5 1H3a1 1 0 00-1 1v11a1 1 0 001 1h9a1 1 0 001-1V5.5L8.5 1zm0 1.2L12.3 5H8.5V2.2z" opacity=".8"/>
-          <path d="M6 9V7.5h1V9h1.5v1H7v1.5H6V10H4.5V9H6z"/>
         </svg>
       </button>
 

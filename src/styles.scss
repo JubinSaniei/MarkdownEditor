@@ -35,7 +35,7 @@
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-sm:  0 1px 2px rgba(0,0,0,.06);
+  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md:  0 4px 12px rgba(0,0,0,.10);
   --shadow-lg:  0 8px 24px rgba(0,0,0,.14), 0 2px 8px rgba(0,0,0,.08);
 
@@ -53,11 +53,11 @@
 :root, [data-theme="light"] {
   /* Base */
   --bg-primary:       #f5f5f5;
-  --bg-secondary:     #ffffff;
+  --bg-secondary:     #f3f9ff;
   --bg-tertiary:      #f0f2f5;
 
   /* Sidebar */
-  --sidebar-bg:       #fafafa;
+  --sidebar-bg:       #f3f9ff;
 
   /* Toolbar / Statusbar */
   --toolbar-bg:       #ffffff;
@@ -97,12 +97,13 @@
   --warning-border:   #fcd34d;
   --warning-text:     #92400e;
 
-  /* Markdown editor syntax colors */
-  --syn-heading:   #835c00;
-  --syn-code:      #1a6b33;
-  --syn-link:      #0055cc;
-  --syn-url:       #0065b5;
-  --syn-punct:     #8a8a8a;
+  /* Markdown editor syntax colors (VS Code Light+ inspired) */
+  --syn-heading:   #0451a5;
+  --syn-code:      #a31515;
+  --syn-link:      #0451a5;
+  --syn-url:       #0451a5;
+  --syn-punct:     #808080;
+  --syn-quote:     #008000;
 }
 
 /* ── Dark Theme (VS Code-inspired) ───────────────────────────── */
@@ -156,12 +157,13 @@
   /* Override status colors for dark */
   --success: #4ec9b0;
 
-  /* Markdown editor syntax colors */
-  --syn-heading:   #dcdcaa;
-  --syn-code:      #98c379;
-  --syn-link:      #61afef;
-  --syn-url:       #56b6c2;
-  --syn-punct:     #666666;
+  /* Markdown editor syntax colors (VS Code Dark+ inspired) */
+  --syn-heading:   #569cd6;
+  --syn-code:      #ce9178;
+  --syn-link:      #569cd6;
+  --syn-url:       #569cd6;
+  --syn-punct:     #808080;
+  --syn-quote:     #608b4e;
 }
 
 /* ── Dark statusbar ──────────────────────────────────────────── */

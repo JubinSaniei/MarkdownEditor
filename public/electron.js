@@ -120,6 +120,7 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      spellcheck: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../src/assets/android-chrome-512x512.png'),
@@ -212,6 +213,32 @@ async function createWindow() {
       app.quit();
     }
   }
+
+  // Spellcheck context menu — show native suggestions on right-click
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    if (!params.misspelledWord) return;
+
+    const menuItems = [];
+
+    for (const suggestion of params.dictionarySuggestions) {
+      menuItems.push({
+        label: suggestion,
+        click: () => mainWindow.webContents.replaceMisspelling(suggestion)
+      });
+    }
+
+    if (menuItems.length === 0) {
+      menuItems.push({ label: 'No suggestions', enabled: false });
+    }
+
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Add to Dictionary',
+      click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+    });
+
+    Menu.buildFromTemplate(menuItems).popup();
+  });
 
   // Block F5 / Ctrl+R (reload) and all DevTools shortcuts
   mainWindow.webContents.on('before-input-event', (event, input) => {

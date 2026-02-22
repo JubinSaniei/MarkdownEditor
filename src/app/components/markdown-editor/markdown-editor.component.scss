@@ -289,9 +289,30 @@
   will-change: transform;
 }
 
-// Highlight and syntax spans are injected via innerHTML (not Angular template),
-// so they don't receive the component's _ngcontent attribute. Use ::ng-deep.
-:host ::ng-deep .highlight-clip {
+// ── Search overlay (sits above syntax backdrop, below textarea) ───
+.search-overlay-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.search-overlay {
+  padding: 32px 24px;
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size);
+  line-height: 1.615;
+  color: transparent;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  border: none;
+  margin: 0;
+  box-sizing: border-box;
+  will-change: transform;
+}
+
+:host ::ng-deep .search-overlay-clip {
   .search-highlight {
     background-color: rgba(255, 214, 0, .45);
     border-radius: 2px;
@@ -301,29 +322,69 @@
       box-shadow: 0 0 0 1px rgba(255, 100, 0, .7);
     }
   }
+}
 
-  // ── Markdown syntax colors ─────────────────────────────────
+// Syntax spans are injected via innerHTML (not Angular template),
+// so they don't receive the component's _ngcontent attribute. Use ::ng-deep.
+:host ::ng-deep .highlight-clip {
+  // ── Markdown syntax colors (VS Code Dark+/Light+ pattern) ──
   .syn-h1, .syn-h2 { color: var(--syn-heading); font-weight: 700; }
   .syn-h3          { color: var(--syn-heading); font-weight: 600; }
   .syn-h4, .syn-h5, .syn-h6 { color: var(--syn-heading); }
 
   .syn-marker      { color: var(--syn-punct); }
-  .syn-fence       { color: var(--syn-code); opacity: .85; }
-  .syn-code-line   { color: var(--syn-code); }
+  .syn-fence       { color: var(--syn-punct); }
+  .syn-code-line   { color: var(--text-primary); }
   .syn-inline-code { color: var(--syn-code); }
 
-  .syn-bold        { font-weight: 700; }
-  .syn-italic      { font-style: italic; }
+  .syn-bold        { font-weight: 700; color: var(--syn-heading); }
+  .syn-italic      { font-style: italic; color: var(--syn-heading); }
+  .syn-strike      { text-decoration: line-through; }
 
   .syn-link-text   { color: var(--syn-link); }
-  .syn-url         { color: var(--syn-url); }
+  .syn-url         { color: var(--syn-url); text-decoration: underline; }
   .syn-punct       { color: var(--syn-punct); }
 
-  .syn-bq-marker   { color: var(--accent); }
-  .syn-blockquote  { color: var(--text-secondary); font-style: italic; }
+  .syn-bq-marker   { color: var(--syn-quote); }
+  .syn-blockquote  { color: var(--syn-quote); font-style: italic; }
 
   .syn-hr          { color: var(--text-tertiary); }
-  .syn-list-marker { color: var(--accent); }
+  .syn-list-marker { color: var(--text-primary); }
+
+  // ── highlight.js classes inside fenced code blocks ──────────
+  .syn-code-line {
+    .hljs-comment,
+    .hljs-quote          { color: var(--syn-quote); font-style: italic; }
+
+    .hljs-keyword,
+    .hljs-selector-tag,
+    .hljs-built_in,
+    .hljs-name,
+    .hljs-tag            { color: var(--syn-heading); }
+
+    .hljs-string,
+    .hljs-title,
+    .hljs-section,
+    .hljs-attribute,
+    .hljs-literal,
+    .hljs-template-tag,
+    .hljs-template-variable,
+    .hljs-type            { color: var(--syn-code); }
+
+    .hljs-number,
+    .hljs-regexp,
+    .hljs-link            { color: var(--syn-url); }
+
+    .hljs-variable,
+    .hljs-params,
+    .hljs-meta            { color: var(--text-primary); }
+
+    .hljs-deletion        { color: var(--danger, #f44747); }
+    .hljs-addition        { color: var(--success, #4ec9b0); }
+
+    .hljs-emphasis        { font-style: italic; }
+    .hljs-strong          { font-weight: 700; }
+  }
 }
 
 // ── Inline AI Bar ─────────────────────────────────────────────
