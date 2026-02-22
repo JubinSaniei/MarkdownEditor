@@ -10,6 +10,7 @@ export class ScrollSyncService {
   private previewElement: HTMLElement | null = null;
   private editorScrollListener: (() => void) | null = null;
   private previewScrollListener: (() => void) | null = null;
+  private pauseTimer: any = null;
 
   /**
    * CRITICAL: Setup bidirectional scroll synchronization
@@ -92,25 +93,71 @@ export class ScrollSyncService {
   }
 
   /**
-   * Scroll to a specific position (used for search results)
+   * Scroll to a specific position (used for search results).
+   * Uses 'scrollend' event to resume sync only after the animation finishes,
+   * with a fallback timeout for cases where scrollend doesn't fire (e.g. already at position).
    */
   scrollToSearchResult(element: HTMLElement, position: number): void {
     if (!element) return;
-    
-    // Temporarily disable sync during search scroll
-    const wasSync = this.isSyncing;
-    this.isSyncing = true;
-    
-    // Smooth scroll to position
-    element.scrollTo({
-      top: position,
-      behavior: 'smooth'
-    });
 
-    // Re-enable sync after animation
-    setTimeout(() => {
-      this.isSyncing = wasSync;
-    }, 500); // Allow time for smooth scroll animation
+    this.isSyncing = true;
+
+    element.scrollTo({ top: position, behavior: 'smooth' });
+
+    let fallback: any;
+    const resume = () => {
+      clearTimeout(fallback);
+      element.removeEventListener('scrollend', resume);
+      this.isSyncing = false;
+    };
+
+    element.addEventListener('scrollend', resume, { once: true });
+    // Fallback in case scrollend doesn't fire (element already at target position)
+    fallback = setTimeout(resume, 800);
+  }
+
+  /**
+   * Temporarily pause sync so both panes can scroll independently
+   * (e.g. during search navigation in split mode). Sync resumes after
+   * both panes finish their scroll animations.
+   */
+  pauseForNavigation(): void {
+    this.isSyncing = true;
+
+    if (this.pauseTimer) clearTimeout(this.pauseTimer);
+
+    let pending = 0;
+    const tryResume = () => {
+      pending--;
+      if (pending <= 0) {
+        if (this.pauseTimer) { clearTimeout(this.pauseTimer); this.pauseTimer = null; }
+        this.isSyncing = false;
+      }
+    };
+
+    const editorResume = () => tryResume();
+    const previewResume = () => tryResume();
+
+    if (this.editorElement) {
+      pending++;
+      this.editorElement.addEventListener('scrollend', editorResume, { once: true });
+    }
+    if (this.previewElement) {
+      pending++;
+      this.previewElement.addEventListener('scrollend', previewResume, { once: true });
+    }
+
+    // Fallback: if no elements or scrollend doesn't fire, resume after timeout
+    if (pending === 0) {
+      this.isSyncing = false;
+      return;
+    }
+    this.pauseTimer = setTimeout(() => {
+      this.pauseTimer = null;
+      if (this.editorElement) this.editorElement.removeEventListener('scrollend', editorResume);
+      if (this.previewElement) this.previewElement.removeEventListener('scrollend', previewResume);
+      this.isSyncing = false;
+    }, 800);
   }
 
   /**
@@ -130,9 +177,10 @@ export class ScrollSyncService {
     if (this.previewElement && this.previewScrollListener) {
       this.previewElement.removeEventListener('scroll', this.previewScrollListener);
     }
-    
+    if (this.pauseTimer) { clearTimeout(this.pauseTimer); this.pauseTimer = null; }
+
     console.log('ScrollSyncService: Cleaned up listeners');
-    
+
     this.editorElement = null;
     this.previewElement = null;
     this.editorScrollListener = null;

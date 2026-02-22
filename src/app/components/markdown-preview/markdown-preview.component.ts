@@ -149,7 +149,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
   // ── Search Highlighting ──────────────────────────────────────
 
-  highlightSearchResults(query: string, results: any[], currentIndex: number) {
+  highlightSearchResults(query: string, results: any[], currentIndex: number, caseSensitive: boolean = false) {
     if (!query || !results.length) {
       if (this.highlightDebounceTimer) { clearTimeout(this.highlightDebounceTimer); this.highlightDebounceTimer = null; }
       this.lastHighlightQuery = '';
@@ -174,7 +174,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = this.originalHtmlContent;
-      this.highlightMatches(tempDiv, query, currentIndex);
+      this.highlightMatches(tempDiv, query, currentIndex, caseSensitive);
       this.htmlContent = this.sanitizeAndTrust(tempDiv.innerHTML);
       this.needsListeners = true;
 
@@ -209,24 +209,24 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     this.previewElement?.nativeElement.focus();
   }
 
-  private highlightMatches(element: HTMLElement, query: string, currentIndex: number) {
+  private highlightMatches(element: HTMLElement, query: string, currentIndex: number, caseSensitive: boolean = false) {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const textNodes: Text[] = [];
     let node;
     while ((node = walker.nextNode())) textNodes.push(node as Text);
 
-    const lowerQuery = query.toLowerCase();
+    const searchQuery = caseSensitive ? query : query.toLowerCase();
     let matchCount = 0;
     textNodes.forEach(textNode => {
       const text = textNode.textContent || '';
-      const lowerText = text.toLowerCase();
-      if (!lowerText.includes(lowerQuery)) return;
+      const searchText = caseSensitive ? text : text.toLowerCase();
+      if (!searchText.includes(searchQuery)) return;
 
       const parts: Node[] = [];
       let lastIndex = 0;
       let idx = 0;
 
-      while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
+      while ((idx = searchText.indexOf(searchQuery, idx)) !== -1) {
         if (idx > lastIndex) parts.push(document.createTextNode(text.substring(lastIndex, idx)));
         const mark = document.createElement('mark');
         matchCount++;
@@ -250,10 +250,18 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
   private updateCurrentMarker(currentIndex: number) {
     if (!this.previewElement) return;
-    const highlights = this.previewElement.nativeElement.querySelectorAll('.search-highlight');
-    highlights.forEach((h: Element, i: number) => h.classList.toggle('current', i === currentIndex - 1));
-    const current = this.previewElement.nativeElement.querySelector('.search-highlight.current');
-    current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const container = this.previewElement.nativeElement;
+
+    // Remove .current from old marker (single querySelector, not O(n) iteration)
+    const oldCurrent = container.querySelector('.search-highlight.current');
+    if (oldCurrent) oldCurrent.classList.remove('current');
+
+    // Add .current to new marker by index
+    const highlights = container.querySelectorAll('.search-highlight');
+    if (currentIndex > 0 && currentIndex <= highlights.length) {
+      highlights[currentIndex - 1].classList.add('current');
+      highlights[currentIndex - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 
   private scrollToCurrentMatch() {

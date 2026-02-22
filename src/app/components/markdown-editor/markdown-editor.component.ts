@@ -71,6 +71,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   private _cachedLineCount = 0;
   private _cachedLineNumberList: number[] = [];
   private _cachedContent: string = '';
+  private lastHighlightQuery: string = '';
+  private lastHighlightCount: number = 0;
 
   constructor(
     private aiService: AiService,
@@ -172,6 +174,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     this.content = event.target.value;
     this.contentChange.emit(this.content);
     this.scheduleSyntaxUpdate();
+    // Invalidate search overlay cache since match positions may have shifted
+    this.lastHighlightQuery = '';
+    this.lastHighlightCount = 0;
   }
 
   onEditorKeyDown(event: KeyboardEvent) {
@@ -680,8 +685,20 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
     if (!query || results.length === 0) {
       overlay.innerHTML = '';
+      this.lastHighlightQuery = '';
+      this.lastHighlightCount = 0;
       return;
     }
+
+    // If query and result count haven't changed, just move the .current marker
+    // instead of rebuilding the entire overlay HTML (avoids expensive innerHTML).
+    if (query === this.lastHighlightQuery && results.length === this.lastHighlightCount) {
+      this.updateCurrentOverlayMarker(overlay, currentIndex);
+      return;
+    }
+
+    this.lastHighlightQuery = query;
+    this.lastHighlightCount = results.length;
 
     // Build the overlay HTML: the full content as transparent text with
     // search-highlight spans carrying only the yellow background.
@@ -710,6 +727,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     this.syncScroll();
   }
 
+  private updateCurrentOverlayMarker(overlay: HTMLElement, currentIndex: number) {
+    const oldCurrent = overlay.querySelector('.search-highlight.current');
+    if (oldCurrent) oldCurrent.classList.remove('current');
+
+    const highlights = overlay.querySelectorAll('.search-highlight');
+    if (currentIndex > 0 && currentIndex <= highlights.length) {
+      highlights[currentIndex - 1].classList.add('current');
+    }
+  }
+
   private scrollToResult(result: any) {
     if (!this.editorElement) return;
 
@@ -731,6 +758,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
   private clearHighlights() {
     if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.innerHTML = '';
+    this.lastHighlightQuery = '';
+    this.lastHighlightCount = 0;
   }
 
   private escapeHtml(text: string): string {

@@ -208,6 +208,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Subscriptions ─────────────────────────────────────────
   private searchSubscription!: Subscription;
+  private navThrottleTimer: any = null;
 
   constructor(
     private electronService: ElectronService,
@@ -314,6 +315,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.scrollSyncService.cleanup();
     if (this.searchSubscription) this.searchSubscription.unsubscribe();
     this.stopAutoSave();
+    if (this.navThrottleTimer) { clearTimeout(this.navThrottleTimer); this.navThrottleTimer = null; }
     this.electronService.removeFileChangedListener();
     for (const group of this.groups) {
       for (const tab of group.tabs) {
@@ -1079,8 +1081,25 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.searchService.performSearch([{ type: 'editor', content: this.currentFileContent }]);
   }
 
-  findNext() { this.searchService.navigateNext(); }
-  findPrevious() { this.searchService.navigatePrevious(); }
+  findNext() {
+    if (this.navThrottleTimer) return;
+    // In split mode, pause scroll sync so both panes can independently
+    // scroll to their respective match positions without fighting.
+    if (this.searchState.searchMode === SearchMode.SPLIT) {
+      this.scrollSyncService.pauseForNavigation();
+    }
+    this.searchService.navigateNext();
+    this.navThrottleTimer = setTimeout(() => { this.navThrottleTimer = null; }, 50);
+  }
+
+  findPrevious() {
+    if (this.navThrottleTimer) return;
+    if (this.searchState.searchMode === SearchMode.SPLIT) {
+      this.scrollSyncService.pauseForNavigation();
+    }
+    this.searchService.navigatePrevious();
+    this.navThrottleTimer = setTimeout(() => { this.navThrottleTimer = null; }, 50);
+  }
 
   // ── Replace ───────────────────────────────────────────────
 
@@ -1146,7 +1165,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       this.markdownEditor?.highlightSearchResults(query, results, currentIndex);
     }
     if (searchMode === SearchMode.PREVIEW || searchMode === SearchMode.SPLIT) {
-      this.markdownPreview?.highlightSearchResults(query, results, currentIndex);
+      this.markdownPreview?.highlightSearchResults(query, results, currentIndex, this.searchOptions.caseSensitive);
     }
   }
 
