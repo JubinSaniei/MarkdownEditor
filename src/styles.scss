@@ -16,6 +16,10 @@
 
   /* Editor font size (user-adjustable via Ctrl+Scroll) */
   --editor-font-size: 13px;
+  /* Integer-pixel line height derived from font size — prevents sub-pixel drift
+     between the <textarea> cursor and the syntax-highlight backdrop <div>.
+     Must stay in sync with Math.round(fontSize * 1.615) in app.component.ts */
+  --editor-line-height: 21px;
 
   /* Spacing */
   --space-1: 0.25rem;

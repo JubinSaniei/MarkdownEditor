@@ -800,6 +800,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private applyFontSize() {
     document.documentElement.style.setProperty('--editor-font-size', `${this.fontSize}px`);
+    const lineHeight = Math.round(this.fontSize * 1.615);
+    document.documentElement.style.setProperty('--editor-line-height', `${lineHeight}px`);
   }
 
   // ── Theme ─────────────────────────────────────────────────

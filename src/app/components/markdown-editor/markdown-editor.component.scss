@@ -244,7 +244,7 @@
 .line-number {
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
-  line-height: 1.615;
+  line-height: var(--editor-line-height, 21px);
   color: var(--text-tertiary);
   text-align: right;
   padding-right: 10px;
@@ -278,7 +278,7 @@
   padding: 32px 24px;
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
-  line-height: 1.615;
+  line-height: var(--editor-line-height, 21px);
   color: var(--text-primary);
   background: transparent;
   white-space: pre-wrap;
@@ -302,7 +302,7 @@
   padding: 32px 24px;
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
-  line-height: 1.615;
+  line-height: var(--editor-line-height, 21px);
   color: transparent;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -724,7 +724,7 @@
   padding: 32px 24px;
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
-  line-height: 1.615;
+  line-height: var(--editor-line-height, 21px);
   resize: none;
   background: transparent;
   color: transparent;
