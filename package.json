@@ -1,6 +1,6 @@
 {
   "name": "markdown-editor-app",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Angular + Electron Markdown Editor",
   "main": "public/electron.js",
   "homepage": "https://github.com/JubinSaniei/MarkdownEditor",
