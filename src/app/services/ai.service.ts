@@ -6,8 +6,6 @@ import { AiInvokeRequest, AiStreamChunk } from '../interfaces/ai-settings.interf
 
 @Injectable({ providedIn: 'root' })
 export class AiService implements OnDestroy {
-  private activeRequestId: string | null = null;
-
   constructor(
     private electronService: ElectronService,
     private settingsService: AiSettingsService,
@@ -17,7 +15,6 @@ export class AiService implements OnDestroy {
   stream(request: AiInvokeRequest): Observable<AiStreamChunk> {
     return new Observable<AiStreamChunk>(subscriber => {
       const requestId = `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      this.activeRequestId = requestId;
       const s = this.settingsService.snapshot;
 
       const payload: Record<string, unknown> = {
@@ -39,7 +36,7 @@ export class AiService implements OnDestroy {
         payload['bedrockModelId'] = s.bedrock.modelId;
       }
 
-      this.electronService.onAiStreamChunk((data) => {
+      const unsubscribeChunk = this.electronService.onAiStreamChunk((data) => {
         if (data.requestId !== requestId) return;
         this.ngZone.run(() => {
           if (data.type === 'chunk')       subscriber.next({ type: 'chunk', text: data.text });
@@ -51,14 +48,11 @@ export class AiService implements OnDestroy {
       this.electronService.aiStreamStart(payload);
 
       return () => {
-        this.electronService.removeAiStreamChunkListener();
-        if (this.activeRequestId === requestId) {
-          this.electronService.aiStreamCancel(requestId);
-          this.activeRequestId = null;
-        }
+        unsubscribeChunk();
+        this.electronService.aiStreamCancel(requestId).catch(() => {});
       };
     });
   }
 
-  ngOnDestroy(): void { this.electronService.removeAiStreamChunkListener(); }
+  ngOnDestroy(): void {}
 }

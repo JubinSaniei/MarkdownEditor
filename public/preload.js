@@ -64,8 +64,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiStreamStart: (payload) => ipcRenderer.send('ai-stream-start', payload),
   aiStreamCancel: (requestId) => ipcRenderer.invoke('ai-stream-cancel', requestId),
   onAiStreamChunk: (callback) => {
-    ipcRenderer.removeAllListeners('ai-stream-chunk');
-    ipcRenderer.on('ai-stream-chunk', (_, data) => callback(data));
+    const listener = (_, data) => callback(data);
+    ipcRenderer.on('ai-stream-chunk', listener);
+    return () => ipcRenderer.removeListener('ai-stream-chunk', listener);
   },
   removeAiStreamChunkListener: () => ipcRenderer.removeAllListeners('ai-stream-chunk'),
 });

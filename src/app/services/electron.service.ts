@@ -170,8 +170,12 @@ export class ElectronService {
     if (this.isElectron) await window.electronAPI.aiStreamCancel(requestId);
   }
 
-  onAiStreamChunk(callback: (data: { requestId: string; type: string; text?: string; error?: string }) => void): void {
-    if (this.isElectron) window.electronAPI.onAiStreamChunk(callback);
+  onAiStreamChunk(callback: (data: { requestId: string; type: string; text?: string; error?: string }) => void): () => void {
+    if (this.isElectron) {
+      const unsubscribe = window.electronAPI.onAiStreamChunk(callback);
+      if (typeof unsubscribe === 'function') return unsubscribe;
+    }
+    return () => {};
   }
 
   removeAiStreamChunkListener(): void {

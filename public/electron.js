@@ -738,6 +738,7 @@ async function streamAnthropic(payload, signal, send) {
   const stream = client.messages.stream({
     model: payload.anthropicModel || 'claude-sonnet-4-5',
     max_tokens: 4096,
+    signal,
     ...(payload.systemPrompt ? { system: payload.systemPrompt } : {}),
     messages: [...history, { role: 'user', content: payload.prompt }],
   });

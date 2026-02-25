@@ -1,6 +1,6 @@
-<div class="editor-wrapper" [class.inline-ai-active]="inlineAi.visible">
+﻿<div class="editor-wrapper" [class.inline-ai-active]="inlineAi.visible">
 
-  <!-- ── Format Toolbar ──────────────────────────────────────── -->
+  <!-- â”€â”€ Format Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="format-toolbar" *ngIf="!readOnly">
 
     <!-- Text style -->
@@ -173,7 +173,7 @@
 
   </div>
 
-  <!-- ── Cheat Sheet Panel ──────────────────────────────────────── -->
+  <!-- â”€â”€ Cheat Sheet Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="cheatsheet-panel" *ngIf="showCheatsheet" #cheatsheetPanel>
     <div class="cs-header">
       <span>Markdown Reference</span>
@@ -218,22 +218,22 @@
       <div class="cs-row"><code>![alt](url "tip")</code><span>image + title</span></div>
 
       <div class="cs-section">Lists</div>
-      <div class="cs-row"><code>- item</code><span>• unordered</span></div>
-      <div class="cs-row"><code>* item</code><span>• unordered (alt)</span></div>
-      <div class="cs-row"><code>+ item</code><span>• unordered (alt)</span></div>
+      <div class="cs-row"><code>- item</code><span>* unordered</span></div>
+      <div class="cs-row"><code>* item</code><span>* unordered (alt)</span></div>
+      <div class="cs-row"><code>+ item</code><span>* unordered (alt)</span></div>
       <div class="cs-row"><code>1. item</code><span>1. ordered</span></div>
-      <div class="cs-row"><code>- [ ] task</code><span>☐ task list</span></div>
-      <div class="cs-row"><code>- [x] done</code><span>☑ checked</span></div>
-      <div class="cs-row cs-row-full"><code>··- nested</code><span>2-space indent = nested</span></div>
+      <div class="cs-row"><code>- [ ] task</code><span>[ ] task list</span></div>
+      <div class="cs-row"><code>- [x] done</code><span>[x] checked</span></div>
+      <div class="cs-row cs-row-full"><code>..- nested</code><span>2-space indent = nested</span></div>
 
       <div class="cs-section">Blocks</div>
       <div class="cs-row"><code>&gt; text</code><span class="cs-blockquote">blockquote</span></div>
       <div class="cs-row cs-row-full"><code>&gt; &gt; nested</code><span class="cs-blockquote">nested quote</span></div>
       <div class="cs-row cs-row-full"><code>```lang<br>code<br>```</code><span>fenced code block</span></div>
-      <div class="cs-row cs-row-full"><code>····indented code</code><span>4-space code block</span></div>
+      <div class="cs-row cs-row-full"><code>....indented code</code><span>4-space code block</span></div>
       <div class="cs-row"><code>---</code><span>horizontal rule</span></div>
       <div class="cs-row"><code>***</code><span>horizontal rule (alt)</span></div>
-      <div class="cs-row cs-row-full"><code>line··<br>(two spaces)</code><span>line break</span></div>
+      <div class="cs-row cs-row-full"><code>line..<br>(two spaces)</code><span>line break</span></div>
       <div class="cs-row cs-row-full"><code>&lt;br&gt;</code><span>explicit line break</span></div>
 
       <div class="cs-section">Table</div>
@@ -258,7 +258,7 @@
     </div>
   </div>
 
-  <!-- ── Inline AI Bar ──────────────────────────────────────────── -->
+  <!-- â”€â”€ Inline AI Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="inline-ai-bar" *ngIf="inlineAi.visible">
 
     <!-- Header -->
@@ -270,11 +270,36 @@
         <path d="M2 14h2"/><path d="M20 14h2"/>
         <path d="M15 13v2"/><path d="M9 13v2"/>
       </svg>
-      <span class="iai-title">AI {{ inlineAi.selStart !== inlineAi.selEnd ? 'Edit Selection' : 'Generate' }}</span>
+      <span class="iai-title">
+        AI {{ inlineAi.mode === 'ask'
+          ? 'Ask About Document'
+          : (inlineAi.scope === 'selection' ? 'Edit Selection' : (inlineAi.scope === 'section' ? 'Edit Section' : 'Edit Document')) }}
+      </span>
+      <div class="iai-scope" *ngIf="!inlineAi.isStreaming">
+        <button class="iai-scope-btn"
+                [class.active]="inlineAi.scope === 'selection'"
+                [disabled]="!inlineAi.hasInitialSelection"
+                (click)="setInlineScope('selection')"
+                title="Edit selected text">
+          Selection
+        </button>
+        <button class="iai-scope-btn"
+                [class.active]="inlineAi.scope === 'section'"
+                (click)="setInlineScope('section')"
+                title="Edit current markdown section">
+          Section
+        </button>
+        <button class="iai-scope-btn"
+                [class.active]="inlineAi.scope === 'document'"
+                (click)="setInlineScope('document')"
+                title="Edit whole document">
+          Document
+        </button>
+      </div>
       <span class="iai-selection-hint"
             *ngIf="inlineAi.originalText"
             [title]="inlineAi.originalText">
-        "{{ inlineAi.originalText.length > 32 ? (inlineAi.originalText.substring(0, 32) + '…') : inlineAi.originalText }}"
+        "{{ inlineAi.originalText.length > 32 ? (inlineAi.originalText.substring(0, 32) + '...') : inlineAi.originalText }}"
       </span>
       <button class="iai-close-btn" (click)="discardInline()" title="Close (Esc)">
         <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor"
@@ -286,7 +311,7 @@
 
     <!-- Quick-action chips (only before first send) -->
     <div class="iai-chips" *ngIf="!inlineAi.isStreaming && inlineAi.previewText === null && !inlineAi.error">
-      <button *ngFor="let chip of (inlineAi.selStart !== inlineAi.selEnd ? editChips : generateChips)"
+      <button *ngFor="let chip of editChips"
               class="iai-chip" (click)="sendChip(chip.prompt)" [title]="chip.prompt">
         {{ chip.label }}
       </button>
@@ -298,8 +323,14 @@
              [(ngModel)]="inlineAi.prompt"
              (keydown)="onInlineAiKeyDown($event)"
              [placeholder]="inlineAi.previewText !== null
-               ? 'Refine… or press Enter / Tab to accept'
-               : (inlineAi.selStart !== inlineAi.selEnd ? 'How should I transform the selection?' : 'What should I generate?')"
+               ? 'Refine... or press Enter / Tab to accept'
+               : (inlineAi.mode === 'ask'
+                  ? 'Ask about this text or document...'
+                  : (inlineAi.scope === 'selection'
+                  ? 'How should I transform the selected text?'
+                  : (inlineAi.scope === 'section'
+                    ? 'How should I transform the current section?'
+                    : 'How should I transform the document?')))"
              [disabled]="inlineAi.isStreaming"
              #inlineAiInput>
       <button class="iai-send-btn" *ngIf="!inlineAi.isStreaming"
@@ -317,28 +348,89 @@
       <div class="iai-preview-text">{{ inlineAi.streamingText }}<span class="iai-cursor"></span></div>
     </div>
 
-    <!-- Result: diff view (edit mode — has original selection) -->
+    <!-- Result: diff view -->
     <div class="iai-diff"
-         *ngIf="!inlineAi.isStreaming && inlineAi.previewText !== null && inlineAi.selStart !== inlineAi.selEnd">
-      <div class="iai-diff-pane iai-diff-before">
-        <div class="iai-diff-label">Before</div>
-        <div class="iai-preview-text">{{ inlineAi.originalText }}</div>
+         *ngIf="inlineAi.mode === 'edit' && !inlineAi.isStreaming && inlineAi.previewText !== null && inlineAi.selStart !== inlineAi.selEnd">
+      <div class="iai-diff-toolbar">
+        <div class="iai-diff-meta">
+          <span>{{ diffAddedLines }} insertions</span>
+          <span>|</span>
+          <span>{{ diffRemovedLines }} deletions</span>
+          <span *ngIf="hasDiffHunks">| Hunk {{ activeHunkOneBased }}/{{ inlineDiffHunks.length }}</span>
+        </div>
+        <div class="iai-diff-tools">
+          <button class="iai-mini-btn" (click)="toggleDiffIgnoreWhitespace()">
+            {{ diffIgnoreWhitespace ? 'WS: ignore' : 'WS: strict' }}
+          </button>
+          <button class="iai-mini-btn" (click)="gotoPreviousDiffHunk()" [disabled]="!hasDiffHunks">Prev</button>
+          <button class="iai-mini-btn" (click)="gotoNextDiffHunk()" [disabled]="!hasDiffHunks">Next</button>
+          <button class="iai-mini-btn ok" (click)="acceptActiveHunk()" [disabled]="!hasDiffHunks">Accept Hunk</button>
+          <button class="iai-mini-btn no" (click)="rejectActiveHunk()" [disabled]="!hasDiffHunks">Reject Hunk</button>
+        </div>
       </div>
-      <div class="iai-diff-pane iai-diff-after">
-        <div class="iai-diff-label">After</div>
-        <div class="iai-preview-text">{{ inlineAi.previewText }}</div>
+      <div class="iai-diff-body">
+        <div class="iai-hunk-list">
+          <button class="iai-hunk-item"
+                  *ngFor="let h of inlineDiffHunks; let hi = index"
+                  [class.active]="hi === activeDiffHunkIndex"
+                  [class.accepted]="inlineDiffDecisions[hi] === 'accepted'"
+                  [class.rejected]="inlineDiffDecisions[hi] === 'rejected'"
+                  (click)="setActiveHunk(hi)">
+            <span class="iai-hunk-item-title">H{{ hi + 1 }}</span>
+            <span class="iai-hunk-item-count">+{{ getHunkAddedCount(hi) }}/-{{ getHunkRemovedCount(hi) }}</span>
+            <span class="iai-hunk-item-state">{{ inlineDiffDecisions[hi] }}</span>
+          </button>
+        </div>
+
+        <div class="iai-hunk-detail" *ngIf="hasDiffHunks">
+          <div class="iai-hunk-head">
+            <span class="iai-hunk-title">Hunk {{ activeHunkOneBased }}</span>
+            <span class="iai-hunk-counts">+{{ activeHunkAddedCount }} / -{{ activeHunkRemovedCount }}</span>
+            <span class="iai-hunk-state"
+                  [class.accepted]="activeHunkDecision === 'accepted'"
+                  [class.rejected]="activeHunkDecision === 'rejected'">
+              {{ activeHunkDecision }}
+            </span>
+            <button class="iai-mini-btn ok" (click)="acceptActiveHunk()">Accept</button>
+            <button class="iai-mini-btn no" (click)="rejectActiveHunk()">Reject</button>
+          </div>
+
+          <div class="iai-empty-hunk" *ngIf="activeHunkRows.length === 0">
+            No line-level changes in this hunk.
+          </div>
+          <div class="iai-row"
+               *ngFor="let row of activeHunkRows"
+               [class.add]="row.kind === 'add'"
+               [class.del]="row.kind === 'del'">
+            <span class="iai-ln">{{ row.oldLineNo ?? '' }}</span>
+            <span class="iai-ln">{{ row.newLineNo ?? '' }}</span>
+            <span class="iai-sign">{{ row.kind === 'add' ? '+' : '-' }}</span>
+            <span class="iai-code" [innerHTML]="row.kind === 'add' ? row.newHtml : row.oldHtml"></span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Result: simple preview (generate mode — no selection) -->
+    <!-- Result: answer preview (ask mode) -->
     <div class="iai-preview"
-         *ngIf="!inlineAi.isStreaming && inlineAi.previewText !== null && inlineAi.selStart === inlineAi.selEnd">
+         *ngIf="inlineAi.mode === 'ask' && !inlineAi.isStreaming && inlineAi.previewText !== null">
       <div class="iai-preview-text">{{ inlineAi.previewText }}</div>
     </div>
 
     <!-- Accept / Discard actions -->
     <div class="iai-actions" *ngIf="!inlineAi.isStreaming && inlineAi.previewText !== null">
-      <button class="iai-accept-btn" (click)="acceptInline()">
+      <button class="iai-accept-btn secondary"
+              *ngIf="inlineAi.mode === 'edit' && hasDiffHunks"
+              (click)="acceptAllHunksAndApply()">
+        Accept All
+      </button>
+      <button class="iai-accept-btn secondary"
+              *ngIf="inlineAi.mode === 'edit' && hasDiffHunks"
+              [disabled]="acceptedHunkCount === 0"
+              (click)="applyAcceptedHunks()">
+        Apply Selected ({{ acceptedHunkCount }})
+      </button>
+      <button class="iai-accept-btn" *ngIf="inlineAi.mode === 'edit'" (click)="acceptInline()">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 6 9 17 4 12"/>
@@ -348,8 +440,11 @@
       <button class="iai-discard-btn" (click)="discardInline()">
         Discard
       </button>
-      <span class="iai-kbd-hint">
-        <kbd>Tab</kbd> or <kbd>Enter</kbd> to accept · <kbd>Esc</kbd> to discard
+      <span class="iai-kbd-hint" *ngIf="inlineAi.mode === 'edit'">
+        <kbd>Tab</kbd>/<kbd>Enter</kbd> accept | <kbd>Esc</kbd> discard | <kbd>J</kbd>/<kbd>K</kbd> hunk | <kbd>A</kbd>/<kbd>R</kbd> accept/reject hunk
+      </span>
+      <span class="iai-kbd-hint" *ngIf="inlineAi.mode === 'ask'">
+        <kbd>Enter</kbd> ask/refine | <kbd>Esc</kbd> close
       </span>
     </div>
 
@@ -363,7 +458,7 @@
 
   </div>
 
-  <!-- ── Editor ───────────────────────────────────────────────── -->
+  <!-- â”€â”€ Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="editor-container">
 
     <!-- Line numbers gutter -->
@@ -383,7 +478,7 @@
       <textarea
         class="markdown-editor"
         [value]="content"
-        [attr.readonly]="readOnly || null"
+        [attr.readonly]="(readOnly || inlineAi.visible) ? true : null"
         [attr.spellcheck]="spellcheckEnabled"
         (input)="onContentChange($event)"
         (keydown)="onEditorKeyDown($event)"
@@ -394,3 +489,4 @@
 
   </div>
 </div>
+
