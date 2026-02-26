@@ -24,6 +24,24 @@ interface RootEntry {
   pendingNew: { type: 'file' | 'folder'; name: string } | null;
 }
 
+interface SubRootEntry {
+  path: string;
+  nodes: FileTreeNode[];
+  expanded: boolean;
+  loading: boolean;
+  pendingNew: { type: 'file' | 'folder'; name: string } | null;
+}
+
+interface VirtualWorkspaceState {
+  id: string;
+  name: string;
+  isRenaming: boolean;
+  renameValue: string;
+  expanded: boolean;
+  subRoots: SubRootEntry[];
+  files: string[]; // individual files added directly
+}
+
 interface ContextMenu {
   visible: boolean;
   x: number;
@@ -49,6 +67,10 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   @Output() recentFilesCleared = new EventEmitter<void>();
 
   workspaces: RootEntry[] = [];
+  virtualWorkspaces: VirtualWorkspaceState[] = [];
+  isCreatingVirtualWs = false;
+  pendingVirtualWsName = '';
+
   private clickTimer: any = null;
   recentExpanded: boolean = true;
   private watchedRoots = new Set<string>();
@@ -76,10 +98,15 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnInit() {
     this.loadExplorerState();
+    this.initVirtualWorkspaces();
     this.electronService.onDirectoryChanged((changedPath: string) => {
       this.zone.run(() => {
         const ws = this.workspaces.find(w => w.path === changedPath);
-        if (ws) this.smartRefreshWorkspace(ws);
+        if (ws) { this.smartRefreshWorkspace(ws); return; }
+        for (const vws of this.virtualWorkspaces) {
+          const subRoot = vws.subRoots.find(sr => sr.path === changedPath);
+          if (subRoot) { this.smartRefreshSubRoot(subRoot); return; }
+        }
       });
     });
   }
@@ -89,7 +116,9 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
       const newRoots: string[] = this.workspaceRoots || [];
       // Unwatch roots that were removed
       for (const watched of this.watchedRoots) {
-        if (!newRoots.includes(watched)) {
+        const inReal = newRoots.includes(watched);
+        const inVirtual = this.virtualWorkspaces.some(vws => vws.subRoots.some(sr => sr.path === watched));
+        if (!inReal && !inVirtual) {
           this.electronService.unwatchDirectory(watched);
           this.watchedRoots.delete(watched);
         }
@@ -224,6 +253,251 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     this.workspaceRemoved.emit(ws.path);
   }
 
+  // ── Virtual Workspace Management ─────────────────────────────
+
+  startCreateVirtualWorkspace() {
+    this.isCreatingVirtualWs = true;
+    this.pendingVirtualWsName = '';
+    setTimeout(() => {
+      const input = this.hostRef.nativeElement.querySelector('.new-vws-input');
+      if (input) { input.focus(); }
+    }, 50);
+  }
+
+  confirmCreateVirtualWorkspace() {
+    const name = this.pendingVirtualWsName.trim();
+    if (!name) { this.cancelCreateVirtualWorkspace(); return; }
+    const id = 'vws_' + Date.now();
+    const vws: VirtualWorkspaceState = {
+      id,
+      name,
+      isRenaming: false,
+      renameValue: '',
+      expanded: true,
+      subRoots: [],
+      files: []
+    };
+    this.virtualWorkspaces.push(vws);
+    this.isCreatingVirtualWs = false;
+    this.pendingVirtualWsName = '';
+    this.saveExplorerState();
+  }
+
+  cancelCreateVirtualWorkspace() {
+    this.isCreatingVirtualWs = false;
+    this.pendingVirtualWsName = '';
+  }
+
+  onVirtualWsCreateKeyDown(event: KeyboardEvent) {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.confirmCreateVirtualWorkspace(); }
+    if (event.key === 'Escape') { this.cancelCreateVirtualWorkspace(); }
+  }
+
+  async addFolderToVirtualWorkspace(vws: VirtualWorkspaceState) {
+    const folderPath = await this.electronService.selectFolder();
+    if (!folderPath) return;
+    if (vws.subRoots.some(sr => sr.path === folderPath)) return;
+    const subRoot: SubRootEntry = {
+      path: folderPath,
+      nodes: [],
+      expanded: true,
+      loading: false,
+      pendingNew: null
+    };
+    vws.subRoots.push(subRoot);
+    await this.loadSubRoot(subRoot);
+    this.saveExplorerState();
+    this.cdr.detectChanges();
+  }
+
+  removeFolderFromVirtualWorkspace(vws: VirtualWorkspaceState, subRoot: SubRootEntry) {
+    if (this.watchedRoots.has(subRoot.path)) {
+      this.electronService.unwatchDirectory(subRoot.path);
+      this.watchedRoots.delete(subRoot.path);
+    }
+    vws.subRoots = vws.subRoots.filter(sr => sr !== subRoot);
+    this.saveExplorerState();
+  }
+
+  async addFileToVirtualWorkspace(vws: VirtualWorkspaceState) {
+    const filePath = await this.electronService.selectFile();
+    if (!filePath) return;
+    if (vws.files.includes(filePath)) return;
+    vws.files.push(filePath);
+    this.saveExplorerState();
+  }
+
+  removeFileFromVirtualWorkspace(vws: VirtualWorkspaceState, filePath: string) {
+    vws.files = vws.files.filter(f => f !== filePath);
+    this.saveExplorerState();
+  }
+
+  removeVirtualWorkspace(vws: VirtualWorkspaceState) {
+    for (const subRoot of vws.subRoots) {
+      if (this.watchedRoots.has(subRoot.path)) {
+        this.electronService.unwatchDirectory(subRoot.path);
+        this.watchedRoots.delete(subRoot.path);
+      }
+    }
+    this.virtualWorkspaces = this.virtualWorkspaces.filter(v => v !== vws);
+    this.saveExplorerState();
+  }
+
+  startRenameVirtualWorkspace(vws: VirtualWorkspaceState) {
+    vws.isRenaming = true;
+    vws.renameValue = vws.name;
+    setTimeout(() => {
+      const input = this.hostRef.nativeElement.querySelector('.vws-rename-input');
+      if (input) { input.focus(); input.select(); }
+    }, 50);
+  }
+
+  applyRenameVirtualWorkspace(vws: VirtualWorkspaceState) {
+    const newName = vws.renameValue.trim();
+    if (newName) vws.name = newName;
+    vws.isRenaming = false;
+    this.saveExplorerState();
+  }
+
+  cancelRenameVirtualWorkspace(vws: VirtualWorkspaceState) {
+    vws.isRenaming = false;
+  }
+
+  onVirtualWsRenameKeyDown(event: KeyboardEvent, vws: VirtualWorkspaceState) {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.applyRenameVirtualWorkspace(vws); }
+    if (event.key === 'Escape') { this.cancelRenameVirtualWorkspace(vws); }
+  }
+
+  toggleVirtualWorkspaceExpanded(vws: VirtualWorkspaceState) {
+    vws.expanded = !vws.expanded;
+    this.saveExplorerState();
+  }
+
+  // ── Sub-root Loading ─────────────────────────────────────────
+
+  async loadSubRoot(subRoot: SubRootEntry) {
+    subRoot.loading = true;
+    try {
+      const contents = await this.electronService.getDirectoryContents(subRoot.path);
+      subRoot.nodes = this.buildNodes(contents);
+    } catch (_) {
+      subRoot.nodes = [];
+    }
+    subRoot.loading = false;
+    if (!this.watchedRoots.has(subRoot.path)) {
+      this.electronService.watchDirectory(subRoot.path);
+      this.watchedRoots.add(subRoot.path);
+    }
+  }
+
+  private async smartRefreshSubRoot(subRoot: SubRootEntry) {
+    try {
+      const contents = await this.electronService.getDirectoryContents(subRoot.path);
+      subRoot.nodes = this.mergeNodeLists(subRoot.nodes, this.buildNodes(contents));
+    } catch (_) { return; }
+    await this.refreshExpandedNodes(subRoot.nodes);
+    this.cdr.detectChanges();
+  }
+
+  async toggleSubRoot(subRoot: SubRootEntry) {
+    subRoot.expanded = !subRoot.expanded;
+    if (subRoot.expanded && subRoot.nodes.length === 0) {
+      await this.loadSubRoot(subRoot);
+    }
+    this.saveExplorerState();
+  }
+
+  startNewFileInSubRoot(subRoot: SubRootEntry) {
+    subRoot.expanded = true;
+    subRoot.pendingNew = { type: 'file', name: '' };
+    setTimeout(() => {
+      const inputs = this.hostRef.nativeElement.querySelectorAll('.root-new-item-input');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }, 50);
+  }
+
+  startNewFolderInSubRoot(subRoot: SubRootEntry) {
+    subRoot.expanded = true;
+    subRoot.pendingNew = { type: 'folder', name: '' };
+    setTimeout(() => {
+      const inputs = this.hostRef.nativeElement.querySelectorAll('.root-new-item-input');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }, 50);
+  }
+
+  async confirmSubRootNewItem(subRoot: SubRootEntry) {
+    if (!subRoot.pendingNew) return;
+    const rawName = subRoot.pendingNew.name.trim();
+    if (!rawName) { subRoot.pendingNew = null; return; }
+
+    const sep = subRoot.path.includes('\\') ? '\\' : '/';
+    const newPath = subRoot.path + sep + rawName;
+
+    if (subRoot.pendingNew.type === 'file') {
+      const defaultContent = rawName.endsWith('.md') ? '# ' + rawName.replace(/\.md$/, '') + '\n\n' : '';
+      const result = await this.electronService.createFileAtPath(newPath, defaultContent);
+      if (result.success) {
+        await this.loadSubRoot(subRoot);
+        this.selectedPath = newPath;
+        this.fileOpened.emit(newPath);
+      }
+    } else {
+      const result = await this.electronService.createFolderAtPath(newPath);
+      if (result.success) await this.loadSubRoot(subRoot);
+    }
+    subRoot.pendingNew = null;
+  }
+
+  cancelSubRootNewItem(subRoot: SubRootEntry) {
+    subRoot.pendingNew = null;
+  }
+
+  onSubRootNewItemKeyDown(event: KeyboardEvent, subRoot: SubRootEntry) {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.confirmSubRootNewItem(subRoot); }
+    if (event.key === 'Escape') { this.cancelSubRootNewItem(subRoot); }
+  }
+
+  // ── Virtual Workspace Init ────────────────────────────────────
+
+  private async initVirtualWorkspaces() {
+    const savedVwsList = this.savedExplorerState?.virtualWorkspaces;
+    if (!savedVwsList || !Array.isArray(savedVwsList)) return;
+
+    for (const saved of savedVwsList) {
+      if (!saved.id || !saved.name) continue;
+      const vws: VirtualWorkspaceState = {
+        id: saved.id,
+        name: saved.name,
+        isRenaming: false,
+        renameValue: '',
+        expanded: saved.expanded ?? true,
+        subRoots: [],
+        files: Array.isArray(saved.files) ? saved.files : []
+      };
+      for (const savedSr of (saved.subRoots || [])) {
+        if (!savedSr.path) continue;
+        const subRoot: SubRootEntry = {
+          path: savedSr.path,
+          nodes: [],
+          expanded: savedSr.expanded ?? true,
+          loading: false,
+          pendingNew: null
+        };
+        vws.subRoots.push(subRoot);
+        await this.loadSubRoot(subRoot);
+        if (subRoot.expanded && savedSr.expandedPaths?.length > 0) {
+          const expandedSet = new Set<string>(savedSr.expandedPaths as string[]);
+          await this.restoreNodeExpansion(subRoot.nodes, expandedSet);
+        }
+      }
+      this.virtualWorkspaces.push(vws);
+    }
+    this.cdr.detectChanges();
+  }
+
   // ── Open File ────────────────────────────────────────────────
 
   openFile(node: FileTreeNode) {
@@ -251,6 +525,28 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     }
     this.selectedPath = node.path;
     this.fileDoubleClicked.emit(node.path);
+  }
+
+  openVwsFile(filePath: string) {
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+      return;
+    }
+    this.clickTimer = setTimeout(() => {
+      this.clickTimer = null;
+      this.selectedPath = filePath;
+      this.fileOpened.emit(filePath);
+    }, 350);
+  }
+
+  openVwsFileNewTab(filePath: string) {
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+    this.selectedPath = filePath;
+    this.fileDoubleClicked.emit(filePath);
   }
 
   clearRecents(event: MouseEvent) {
@@ -390,14 +686,6 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
 
   // ── Create at workspace root ──────────────────────────────────
 
-  startNewFileAtRoot() {
-    if (this.workspaces.length === 1) this.startNewFileInWorkspace(this.workspaces[0]);
-  }
-
-  startNewFolderAtRoot() {
-    if (this.workspaces.length === 1) this.startNewFolderInWorkspace(this.workspaces[0]);
-  }
-
   startNewFileInWorkspace(ws: RootEntry) {
     ws.expanded = true;
     ws.pendingNew = { type: 'file', name: '' };
@@ -461,7 +749,9 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
         this.fileOpened.emit('');
       }
       const ws = this.findWorkspaceForNode(node.path);
-      if (ws) await this.loadWorkspace(ws);
+      if (ws) { await this.loadWorkspace(ws); return; }
+      const subRoot = this.findSubRootForNode(node.path);
+      if (subRoot) await this.loadSubRoot(subRoot);
     }
   }
 
@@ -469,6 +759,16 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     return this.workspaces.find(ws =>
       nodePath.startsWith(ws.path + '\\') || nodePath.startsWith(ws.path + '/')
     ) ?? null;
+  }
+
+  private findSubRootForNode(nodePath: string): SubRootEntry | null {
+    for (const vws of this.virtualWorkspaces) {
+      const subRoot = vws.subRoots.find(sr =>
+        nodePath.startsWith(sr.path + '\\') || nodePath.startsWith(sr.path + '/')
+      );
+      if (subRoot) return subRoot;
+    }
+    return null;
   }
 
   // ── Context Menu ─────────────────────────────────────────────
@@ -534,38 +834,70 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
 
   /** Expand all parent directories so the given file path is visible in the tree. */
   private async revealPath(filePath: string) {
+    // Try real workspaces first
     const ws = this.findWorkspaceForNode(filePath);
-    if (!ws) return;
+    if (ws) {
+      ws.expanded = true;
+      const sep = ws.path.includes('\\') ? '\\' : '/';
+      const relative = filePath.startsWith(ws.path + sep)
+        ? filePath.substring(ws.path.length + 1)
+        : null;
+      if (!relative) return;
 
-    ws.expanded = true;
+      const segments = relative.split(/[/\\]/);
+      segments.pop();
 
-    // Build the list of path segments between the workspace root and the file
-    const sep = ws.path.includes('\\') ? '\\' : '/';
-    const relative = filePath.startsWith(ws.path + sep)
-      ? filePath.substring(ws.path.length + 1)
+      let currentNodes = ws.nodes;
+      let currentPath = ws.path;
+
+      for (const segment of segments) {
+        currentPath += sep + segment;
+        const dirNode = currentNodes.find(n => n.isDirectory && n.path === currentPath);
+        if (!dirNode) break;
+        if (dirNode.children === null) {
+          dirNode.loading = true;
+          try {
+            const contents = await this.electronService.getDirectoryContents(dirNode.path);
+            dirNode.children = this.buildNodes(contents);
+          } catch (_) { dirNode.children = []; }
+          dirNode.loading = false;
+        }
+        dirNode.expanded = true;
+        currentNodes = dirNode.children;
+      }
+      return;
+    }
+
+    // Try virtual workspace sub-roots
+    const subRoot = this.findSubRootForNode(filePath);
+    if (!subRoot) return;
+
+    const vws = this.virtualWorkspaces.find(v => v.subRoots.includes(subRoot));
+    if (vws) vws.expanded = true;
+    subRoot.expanded = true;
+
+    const sep = subRoot.path.includes('\\') ? '\\' : '/';
+    const relative = filePath.startsWith(subRoot.path + sep)
+      ? filePath.substring(subRoot.path.length + 1)
       : null;
     if (!relative) return;
 
     const segments = relative.split(/[/\\]/);
-    segments.pop(); // remove the filename — we only need to expand directories
+    segments.pop();
 
-    let currentNodes = ws.nodes;
-    let currentPath = ws.path;
+    let currentNodes = subRoot.nodes;
+    let currentPath = subRoot.path;
 
     for (const segment of segments) {
       currentPath += sep + segment;
       const dirNode = currentNodes.find(n => n.isDirectory && n.path === currentPath);
       if (!dirNode) break;
-
-      // Load children if not yet loaded
       if (dirNode.children === null) {
         dirNode.loading = true;
         try {
           const contents = await this.electronService.getDirectoryContents(dirNode.path);
           dirNode.children = this.buildNodes(contents);
-        } catch (_) {
-          dirNode.children = [];
-        }
+        } catch (_) { dirNode.children = []; }
         dirNode.loading = false;
       }
       dirNode.expanded = true;
@@ -606,9 +938,15 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     return ws.path;
   }
 
+  trackByVirtualWsId(_: number, vws: VirtualWorkspaceState): string {
+    return vws.id;
+  }
+
   collapseAll() {
     const anyFolderExpanded = this.workspaces.some(
       ws => ws.expanded && this.hasExpandedNode(ws.nodes)
+    ) || this.virtualWorkspaces.some(
+      vws => vws.expanded && vws.subRoots.some(sr => sr.expanded && this.hasExpandedNode(sr.nodes))
     );
 
     if (anyFolderExpanded) {
@@ -616,10 +954,18 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
       for (const ws of this.workspaces) {
         this.collapseNodes(ws.nodes);
       }
+      for (const vws of this.virtualWorkspaces) {
+        for (const subRoot of vws.subRoots) {
+          this.collapseNodes(subRoot.nodes);
+        }
+      }
     } else {
       // Stage 2: collapse workspace headers and recent section
       for (const ws of this.workspaces) {
         ws.expanded = false;
+      }
+      for (const vws of this.virtualWorkspaces) {
+        vws.expanded = false;
       }
       this.recentExpanded = false;
     }
@@ -676,12 +1022,26 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   private flushExplorerState() {
     const state: any = {
       recentExpanded: this.recentExpanded,
-      workspaces: {} as Record<string, { expanded: boolean; expandedPaths: string[] }>
+      workspaces: {} as Record<string, { expanded: boolean; expandedPaths: string[] }>,
+      virtualWorkspaces: [] as any[]
     };
     for (const ws of this.workspaces) {
       const expandedPaths: string[] = [];
       this.collectExpandedPaths(ws.nodes, expandedPaths);
       state.workspaces[ws.path] = { expanded: ws.expanded, expandedPaths };
+    }
+    for (const vws of this.virtualWorkspaces) {
+      state.virtualWorkspaces.push({
+        id: vws.id,
+        name: vws.name,
+        expanded: vws.expanded,
+        files: vws.files,
+        subRoots: vws.subRoots.map(sr => {
+          const expandedPaths: string[] = [];
+          this.collectExpandedPaths(sr.nodes, expandedPaths);
+          return { path: sr.path, expanded: sr.expanded, expandedPaths };
+        })
+      });
     }
     try {
       localStorage.setItem(this.EXPLORER_STATE_KEY, JSON.stringify(state));
@@ -760,7 +1120,8 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
 
   private async performSearch() {
     const query = this.searchQuery.trim().toLowerCase();
-    if (!query || !this.workspaces.length) {
+    const hasRoots = this.workspaces.length > 0 || this.virtualWorkspaces.some(v => v.subRoots.length > 0);
+    if (!query || !hasRoots) {
       this.searchResults = [];
       this.searchLoading = false;
       return;
@@ -769,7 +1130,13 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     const results: Array<{ name: string; path: string }> = [];
     for (const ws of this.workspaces) {
       await this.collectMatches(ws.path, query, results, token, 0);
-      if (this.searchToken !== token) return; // query changed mid-traversal
+      if (this.searchToken !== token) return;
+    }
+    for (const vws of this.virtualWorkspaces) {
+      for (const subRoot of vws.subRoots) {
+        await this.collectMatches(subRoot.path, query, results, token, 0);
+        if (this.searchToken !== token) return;
+      }
     }
     this.searchResults = results;
     if (results.length >= this.MAX_SEARCH_RESULTS) {

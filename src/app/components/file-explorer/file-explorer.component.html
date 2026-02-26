@@ -4,28 +4,21 @@
   <div class="explorer-header">
     <span class="explorer-title">EXPLORER</span>
     <div class="header-actions">
-      <button class="hdr-btn" *ngIf="workspaces.length === 1"
-              (click)="startNewFileAtRoot()" title="New File">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-          <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V5L8 1zm0 1.5L11.5 5H8V2.5z" opacity=".7"/>
-          <path d="M6.5 8V6h1v2h2v1h-2v2h-1V9h-2V8h2z"/>
-        </svg>
-      </button>
-      <button class="hdr-btn" *ngIf="workspaces.length === 1"
-              (click)="startNewFolderAtRoot()" title="New Folder">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-          <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3zm4 4V5H4v2H2v1h2v2h1V8h2V7H5z"/>
-        </svg>
-      </button>
       <button class="hdr-btn" (click)="collapseAll()" title="Collapse All"
-              [disabled]="workspaces.length === 0">
+              [disabled]="workspaces.length === 0 && virtualWorkspaces.length === 0">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
           <path d="M2 3h10v1H2zm1 3h8v1H3zm2 3h4v1H5z" opacity=".8"/>
         </svg>
       </button>
-      <button class="hdr-btn" (click)="openFolder()" title="Add Folder">
+      <button class="hdr-btn" (click)="openFolder()" title="Add Folder to Explorer">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
           <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+        </svg>
+      </button>
+      <button class="hdr-btn" (click)="startCreateVirtualWorkspace()" title="Create Virtual Workspace">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z" opacity=".5"/>
+          <path d="M7 5.5v3M5.5 7h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
         </svg>
       </button>
       <button class="hdr-btn" [class.hdr-btn-active]="searchActive" (click)="toggleSearch()" title="Search Files">
@@ -35,6 +28,19 @@
         </svg>
       </button>
     </div>
+  </div>
+
+  <!-- ── New Virtual Workspace Input ───────────────────────────── -->
+  <div class="new-vws-bar" *ngIf="isCreatingVirtualWs">
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor" opacity=".5">
+      <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+    </svg>
+    <input class="search-input new-vws-input"
+           type="text"
+           placeholder="Workspace name…"
+           [(ngModel)]="pendingVirtualWsName"
+           (keydown)="onVirtualWsCreateKeyDown($event)"
+           (blur)="cancelCreateVirtualWorkspace()">
   </div>
 
   <!-- ── Search Bar ─────────────────────────────────────────────── -->
@@ -83,7 +89,7 @@
   </div>
 
   <!-- ── No Workspace State ─────────────────────────────────────── -->
-  <div class="empty-state" *ngIf="!searchActive && workspaces.length === 0 && recentFiles.length === 0">
+  <div class="empty-state" *ngIf="!searchActive && workspaces.length === 0 && virtualWorkspaces.length === 0 && recentFiles.length === 0">
     <svg width="40" height="40" viewBox="0 0 40 40" fill="currentColor" opacity=".25">
       <path d="M5 8a3 3 0 013-3h9.5L20 8H35a3 3 0 013 3v20a3 3 0 01-3 3H8a3 3 0 01-3-3V8z"/>
     </svg>
@@ -91,7 +97,7 @@
     <button class="open-folder-btn" (click)="openFolder()">Add Folder</button>
   </div>
 
-  <div class="tree-scroll" *ngIf="!searchActive && (workspaces.length > 0 || recentFiles.length > 0)">
+  <div class="tree-scroll" *ngIf="!searchActive && (workspaces.length > 0 || virtualWorkspaces.length > 0 || recentFiles.length > 0)">
 
     <!-- ── Recent Files ─────────────────────────────────────────── -->
     <div class="tree-section" *ngIf="recentFiles.length > 0">
@@ -176,6 +182,156 @@
 
         <!-- Tree nodes -->
         <ng-container *ngTemplateOutlet="treeNodes; context: { $implicit: ws.nodes, depth: 0 }"></ng-container>
+
+      </div>
+    </div>
+
+    <!-- ── Virtual Workspace Sections ───────────────────────────── -->
+    <div class="tree-section" *ngFor="let vws of virtualWorkspaces; trackBy: trackByVirtualWsId">
+
+      <!-- Virtual workspace header -->
+      <div class="section-header ws-section-header vws-header" (click)="toggleVirtualWorkspaceExpanded(vws)">
+        <svg class="section-arrow" [class.open]="vws.expanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+          <path d="M2 1l4 3.5L2 8"/>
+        </svg>
+        <!-- Virtual workspace icon -->
+        <svg class="vws-icon" width="12" height="12" viewBox="0 0 14 14" fill="currentColor" opacity=".7">
+          <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+          <path d="M4 7.5h6M4 9.5h4" stroke="var(--sidebar-bg)" stroke-width="1" fill="none"/>
+        </svg>
+        <!-- Name / rename input -->
+        <span class="ws-name" *ngIf="!vws.isRenaming" [title]="'Virtual workspace: ' + vws.name">{{ vws.name }}</span>
+        <input class="rename-input vws-rename-input" *ngIf="vws.isRenaming"
+               type="text"
+               [(ngModel)]="vws.renameValue"
+               (keydown)="onVirtualWsRenameKeyDown($event, vws)"
+               (blur)="applyRenameVirtualWorkspace(vws)"
+               (click)="$event.stopPropagation()">
+        <!-- Hover actions -->
+        <div class="ws-actions" (click)="$event.stopPropagation()">
+          <button class="hdr-btn" (click)="addFolderToVirtualWorkspace(vws)" title="Add folder to this workspace">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+              <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z" opacity=".6"/>
+              <path d="M7 5.5v3M5.5 7h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+            </svg>
+          </button>
+          <button class="hdr-btn" (click)="addFileToVirtualWorkspace(vws)" title="Add file to this workspace">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+              <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V5L8 1zm0 1.5L11.5 5H8V2.5z" opacity=".6"/>
+              <path d="M7 7.5v3M5.5 9h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+            </svg>
+          </button>
+          <button class="hdr-btn" (click)="startRenameVirtualWorkspace(vws)" title="Rename workspace">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+              <path d="M8.5 1.5a1.5 1.5 0 012.1 2.1L4 10.2l-2.5.6.6-2.5L8.5 1.5z"/>
+            </svg>
+          </button>
+          <button class="hdr-btn hdr-btn-remove" (click)="removeVirtualWorkspace(vws)" title="Remove this workspace">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M2 2l7 7M9 2l-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Virtual workspace body -->
+      <div class="section-body" *ngIf="vws.expanded">
+
+        <!-- Empty state when nothing added yet -->
+        <div class="vws-empty" *ngIf="vws.subRoots.length === 0 && vws.files.length === 0">
+          <span>Nothing added yet.</span>
+          <button class="vws-add-btn" (click)="addFolderToVirtualWorkspace(vws)">Add Folder</button>
+          <button class="vws-add-btn" (click)="addFileToVirtualWorkspace(vws)">Add File</button>
+        </div>
+
+        <!-- Individual files -->
+        <div *ngFor="let filePath of vws.files; trackBy: trackByFilePath"
+             class="tree-row file-row vws-file-row"
+             [class.selected]="selectedPath === filePath"
+             [title]="filePath"
+             (click)="openVwsFile(filePath)"
+             (dblclick)="openVwsFileNewTab(filePath)">
+          <svg class="file-icon md-icon" width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+            <path d="M2 1h5l3 3v8H2V1zm5 0v3h3" opacity=".85"/>
+          </svg>
+          <span class="row-name">{{ getFileName(filePath) }}</span>
+          <div class="row-actions" (click)="$event.stopPropagation()">
+            <button class="row-btn danger" (click)="removeFileFromVirtualWorkspace(vws, filePath)" title="Remove from workspace">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                <path d="M2 2l7 7M9 2l-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sub-root entries -->
+        <div class="sub-root" *ngFor="let subRoot of vws.subRoots">
+
+          <!-- Sub-root header -->
+          <div class="sub-root-header" (click)="toggleSubRoot(subRoot)">
+            <svg class="section-arrow sub-root-arrow" [class.open]="subRoot.expanded" width="8" height="8" viewBox="0 0 9 9" fill="currentColor">
+              <path d="M2 1l4 3.5L2 8" *ngIf="!subRoot.loading"/>
+              <circle *ngIf="subRoot.loading" cx="4.5" cy="4.5" r="3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="10" class="spin"/>
+            </svg>
+            <svg class="dir-icon sub-root-dir-icon" width="13" height="13" viewBox="0 0 14 14" fill="currentColor">
+              <path *ngIf="!subRoot.expanded" d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+              <path *ngIf="subRoot.expanded" d="M1 4a1 1 0 011-1h3.5L6.5 4H12a1 1 0 011 1v.5L11.5 11H2.5L1 5.5V4z"/>
+            </svg>
+            <span class="sub-root-name" [title]="subRoot.path">{{ getWorkspaceName(subRoot.path) }}</span>
+            <div class="ws-actions sub-root-actions" (click)="$event.stopPropagation()">
+              <button class="hdr-btn" (click)="startNewFileInSubRoot(subRoot)" title="New File">
+                <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
+                  <path d="M8 1H3a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V5L8 1zm0 1.5L11.5 5H8V2.5z" opacity=".7"/>
+                  <path d="M6.5 8V6h1v2h2v1h-2v2h-1V9h-2V8h2z"/>
+                </svg>
+              </button>
+              <button class="hdr-btn" (click)="startNewFolderInSubRoot(subRoot)" title="New Folder">
+                <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
+                  <path d="M1 3a1 1 0 011-1h3.5L6.5 3H12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V3zm4 4V5H4v2H2v1h2v2h1V8h2V7H5z"/>
+                </svg>
+              </button>
+              <button class="hdr-btn hdr-btn-remove" (click)="removeFolderFromVirtualWorkspace(vws, subRoot)" title="Remove folder from workspace">
+                <svg width="10" height="10" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                  <path d="M2 2l7 7M9 2l-7 7"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sub-root body -->
+          <div *ngIf="subRoot.expanded">
+
+            <!-- Loading -->
+            <div class="loading-row" *ngIf="subRoot.loading" style="padding-left: 28px">
+              <span class="spinner"></span>
+              <span>Loading…</span>
+            </div>
+
+            <!-- Pending new item at sub-root level -->
+            <div class="tree-row new-item-row" *ngIf="subRoot.pendingNew" style="padding-left: 24px">
+              <svg class="file-icon" width="13" height="13" viewBox="0 0 13 13" fill="currentColor" opacity=".6">
+                <path *ngIf="subRoot.pendingNew.type==='file'" d="M2 1h5l3 3v8H2V1z"/>
+                <path *ngIf="subRoot.pendingNew.type==='folder'" d="M1 3a1 1 0 011-1h3L6 3h6a1 1 0 011 1v6a1 1 0 01-1 1H2a1 1 0 01-1-1V3z"/>
+              </svg>
+              <input class="rename-input root-new-item-input"
+                     type="text"
+                     [(ngModel)]="subRoot.pendingNew.name"
+                     [placeholder]="subRoot.pendingNew.type === 'file' ? 'filename.md' : 'folder name'"
+                     (keydown)="onSubRootNewItemKeyDown($event, subRoot)"
+                     (blur)="cancelSubRootNewItem(subRoot)">
+            </div>
+
+            <!-- Tree nodes (depth=1 to account for sub-root level indentation) -->
+            <ng-container *ngTemplateOutlet="treeNodes; context: { $implicit: subRoot.nodes, depth: 1 }"></ng-container>
+
+            <!-- Empty dir hint -->
+            <div class="empty-dir" *ngIf="!subRoot.loading && subRoot.nodes.length === 0 && !subRoot.pendingNew"
+                 style="padding-left: 36px">
+              empty
+            </div>
+
+          </div>
+        </div>
 
       </div>
     </div>
