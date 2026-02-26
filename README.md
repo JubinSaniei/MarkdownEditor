@@ -22,6 +22,7 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - Dirty state indicator (●) when a file has unsaved changes
 - `Ctrl+W` closes the active tab
 - All open tabs are restored on next launch, with the previously active tab re-selected
+- **Reorder tabs** — drag a tab left or right within the same pane to reposition it; a drop indicator shows the insertion point before or after each tab
 
 ### View Modes
 - **Preview** — rendered markdown output (default on first launch)
@@ -39,10 +40,29 @@ A modern desktop markdown editor built with Angular and Electron. Provides a pro
 - Single-click opens a file; double-click opens it in a new permanent tab
 - Active tab's file is automatically highlighted and its parent folders expanded in the explorer
 - Rename (F2), delete, and create new files/folders inline
-- New File / New Folder buttons appear in the explorer header when exactly one workspace is open
 - Recent files section with a hover-reveal × button to clear the entire list
 - **Search files** — click the 🔍 button in the explorer header to enter search mode; type to filter markdown files across all workspace folders recursively; results show filename and parent path; click a result to open it; press `Escape` or click × to return to the file tree
 - **Live file system sync** — the explorer automatically detects files and folders added, removed, or renamed from outside the application (e.g. via the OS file manager, terminal, or another app); only currently expanded folders are re-queried, so the tree updates in place without collapsing
+
+#### Virtual Workspaces
+
+Virtual workspaces let you group any combination of existing folders and files under a single custom-named section — without moving anything on disk. This is useful when a project contains multiple scattered note folders alongside source code and you want them all visible together in one place.
+
+**Creating a virtual workspace:**
+- Click the folder-with-plus button in the explorer header
+- Type a name and press `Enter` (the name is always shown in uppercase)
+
+**Adding content** (hover the workspace header to reveal action buttons):
+- **Add Folder** — opens a folder picker; the selected folder appears as a sub-section inside the virtual workspace with its own expandable file tree, new file/folder buttons, and live sync
+- **Add File** — opens a file picker; the selected file appears directly in the virtual workspace
+
+**Managing a virtual workspace** (hover to reveal):
+- **Rename** — edit the workspace name inline
+- **Remove folder** (per sub-folder) — removes the folder from the workspace; the folder on disk is unaffected
+- **Remove file** (per file) — removes the file from the workspace; the file on disk is unaffected
+- **Remove workspace** — deletes the virtual workspace entry; nothing on disk is changed
+
+Virtual workspaces are persisted across sessions. Search covers all folders inside virtual workspaces.
 
 ### Search & Replace
 - `Ctrl+F` opens the search bar; `Escape` or × closes it
@@ -136,25 +156,45 @@ AWS Bedrock uses the standard AWS credential chain (`AWS_ACCESS_KEY_ID`, `AWS_SE
 
 Press **`Ctrl+Shift+A`** or click the bot icon in the format toolbar to open the inline AI bar at the bottom of the editor. Only available in Edit mode.
 
-**Two modes, detected automatically:**
+**Two modes, detected automatically from your prompt:**
 
-| Mode | When | Behaviour |
+| Mode | Triggered when | Behaviour |
 |---|---|---|
-| **Edit Selection** | Text is selected | AI transforms the selected text based on your instruction |
-| **Generate** | No selection | AI generates content and inserts it at the cursor |
+| **Edit** | Default; directive words like *make*, *fix*, *rewrite* | AI transforms content and shows a diff for review |
+| **Ask** | Question words (*explain*, *summarize*, *why*, *how*…) or prompt ends with `?` | AI answers about the document; no changes are applied |
 
-**Quick-action chips** — one-click prompts that fire immediately without typing:
+**Three scope levels** — buttons in the bar header let you choose what the AI targets:
 
-- Edit mode: `Fix grammar` · `Make shorter` · `Make longer` · `Rephrase` · `To bullets`
-- Generate mode: `Continue` · `Add example` · `Add table` · `Summarize doc`
+| Scope | What it covers |
+|---|---|
+| **Selection** | Only the selected text (disabled if nothing is selected) |
+| **Section** | The current markdown section from its heading to the next equal-or-higher heading |
+| **Document** | The entire document |
 
-**Diff view (Edit mode)** — results show a side-by-side Before / After panel so you can compare the original and the AI suggestion before committing.
+Opening the bar with text selected defaults to Selection scope; without a selection it defaults to Document scope.
 
-**Refine without discarding** — after a result appears, the input is re-enabled. Type a follow-up instruction (e.g. "make it shorter") and click **Refine** to iterate. The AI receives the original text, the previous suggestion, and the new instruction.
+**Quick-action chips** — one-click prompts shown before the first send:
 
-**Surrounding context** — the 4 lines before and after the cursor/selection are automatically included in the request so the AI matches tone, heading level, and list style.
+- With a selection: `Fix grammar` · `Make shorter` · `Make longer` · `Rephrase` · `To bullets`
+- Without a selection: `Continue` · `Add example` · `Add table` · `Summarize doc`
 
-**Prompt history** — press `↑` / `↓` in the input to recall previous prompts within the session.
+**Line-targeted instructions** — reference specific lines in your prompt and the AI targets them directly:
+- `"fix line 7"` / `"replace line 7"` — selects and replaces that line
+- `"at the end of line 5"` / `"at the start of line 3"` — places the cursor at the specified position
+
+**Diff view (Edit mode)** — results are broken into **hunks** (contiguous change regions) so you can review and accept or reject each change individually:
+
+- **Accept All** — applies every hunk at once
+- **Apply Selected** — applies only the hunks you have individually accepted (shows count)
+- **Accept Hunk / Reject Hunk** — mark individual hunks; navigate with Prev / Next or keyboard
+- **WS toggle** — switch between ignoring and preserving whitespace in the diff calculation
+- Diff shows line-level changes with word-level highlights for precise comparison (red = removed, green = added)
+
+**Refine without discarding** — after a result appears the input is re-enabled. Type a follow-up instruction (e.g. "make it shorter") and click **Refine** to iterate.
+
+**Surrounding context** — the 4 lines before and after the target are always included in the request so the AI matches the surrounding tone, heading level, and list style.
+
+**Prompt history** — press `↑` / `↓` in the input to recall previous prompts within the session (up to 20 entries).
 
 **Keyboard shortcuts in the inline bar:**
 
@@ -164,6 +204,10 @@ Press **`Ctrl+Shift+A`** or click the bot icon in the format toolbar to open the
 | `Tab` | Accept |
 | `Escape` | Discard / close bar |
 | `↑` / `↓` | Navigate prompt history |
+| `J` | Next hunk |
+| `K` | Previous hunk |
+| `A` | Accept active hunk |
+| `R` | Reject active hunk |
 
 **Accept** inserts or replaces via the native undo stack — `Ctrl+Z` works as expected.
 
@@ -245,6 +289,8 @@ To add macOS or Linux targets, edit the `build` section in `package.json`.
 | `Tab` / `Enter` | Accept inline AI result |
 | `Escape` | Discard inline AI / close bar |
 | `↑` / `↓` (inline bar) | Navigate prompt history |
+| `J` / `K` (inline bar) | Next / previous hunk |
+| `A` / `R` (inline bar) | Accept / reject active hunk |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
 | `Ctrl+K` | Insert link |
