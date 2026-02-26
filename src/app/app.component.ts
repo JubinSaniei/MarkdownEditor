@@ -202,6 +202,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   // ── Drag-and-Drop ─────────────────────────────────────────
   isDraggingFile: boolean = false;
   private dragCounter: number = 0;
+  private readonly tabDragType = 'application/x-md-editor-tab';
+  draggingTabId: string | null = null;
+  private draggingGroupId: string | null = null;
+  private dragOverGroupId: string | null = null;
+  private dragOverIndex: number | null = null;
+  private dragOverPosition: 'before' | 'after' | null = null;
 
   // ── Save Suppression ──────────────────────────────────────
   private readonly saveSuppressionSet = new Set<string>();
@@ -931,21 +937,22 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   onDragEnter(event: DragEvent) {
     event.preventDefault();
     event.stopPropagation();
+    if (!event.dataTransfer?.types.includes('Files')) return;
     this.dragCounter++;
-    if (event.dataTransfer?.types.includes('Files')) {
-      this.isDraggingFile = true;
-    }
+    this.isDraggingFile = true;
   }
 
   onDragOver(event: DragEvent) {
     event.preventDefault();
     event.stopPropagation();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.dataTransfer.dropEffect = 'copy';
   }
 
   onDragLeave(event: DragEvent) {
     event.preventDefault();
     event.stopPropagation();
+    if (!event.dataTransfer?.types.includes('Files')) return;
     this.dragCounter--;
     if (this.dragCounter <= 0) {
       this.dragCounter = 0;
@@ -956,6 +963,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   onDrop(event: DragEvent) {
     event.preventDefault();
     event.stopPropagation();
+    if (!event.dataTransfer?.types.includes('Files')) return;
     this.dragCounter = 0;
     this.isDraggingFile = false;
     if (!event.dataTransfer?.files.length) return;
@@ -964,6 +972,78 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const filePath = this.electronService.getPathForFile(file);
       if (filePath) this.openFileAsNewTab(filePath);
     }
+  }
+
+  onTabDragStart(tab: EditorTab, group: EditorGroup, event: DragEvent) {
+    event.stopPropagation();
+    if (!event.dataTransfer) return;
+    event.dataTransfer.setData(this.tabDragType, tab.id);
+    event.dataTransfer.effectAllowed = 'move';
+    this.draggingTabId = tab.id;
+    this.draggingGroupId = group.id;
+    this.dragOverGroupId = group.id;
+    this.dragOverIndex = group.tabs.indexOf(tab);
+    this.dragOverPosition = 'after';
+  }
+
+  onTabDragOver(tab: EditorTab, group: EditorGroup, event: DragEvent) {
+    if (!this.isTabDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.draggingGroupId !== group.id) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const before = event.clientX < rect.left + rect.width / 2;
+    this.dragOverGroupId = group.id;
+    this.dragOverIndex = group.tabs.indexOf(tab);
+    this.dragOverPosition = before ? 'before' : 'after';
+  }
+
+  onTabDrop(tab: EditorTab, group: EditorGroup, event: DragEvent) {
+    if (!this.isTabDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.draggingGroupId !== group.id) {
+      this.onTabDragEnd();
+      return;
+    }
+    const fromIndex = group.tabs.findIndex(t => t.id === this.draggingTabId);
+    const targetIndex = group.tabs.indexOf(tab);
+    if (fromIndex === -1 || targetIndex === -1) {
+      this.onTabDragEnd();
+      return;
+    }
+    let insertIndex = targetIndex + (this.dragOverPosition === 'after' ? 1 : 0);
+    if (fromIndex < insertIndex) insertIndex -= 1;
+    if (fromIndex !== insertIndex) {
+      const [moved] = group.tabs.splice(fromIndex, 1);
+      group.tabs.splice(insertIndex, 0, moved);
+      this.saveSettings();
+    }
+    this.onTabDragEnd();
+  }
+
+  onTabDragEnd() {
+    this.draggingTabId = null;
+    this.draggingGroupId = null;
+    this.dragOverGroupId = null;
+    this.dragOverIndex = null;
+    this.dragOverPosition = null;
+  }
+
+  isDropBefore(tab: EditorTab, group: EditorGroup): boolean {
+    return this.dragOverGroupId === group.id
+      && this.dragOverIndex === group.tabs.indexOf(tab)
+      && this.dragOverPosition === 'before';
+  }
+
+  isDropAfter(tab: EditorTab, group: EditorGroup): boolean {
+    return this.dragOverGroupId === group.id
+      && this.dragOverIndex === group.tabs.indexOf(tab)
+      && this.dragOverPosition === 'after';
+  }
+
+  private isTabDragEvent(event: DragEvent): boolean {
+    return !!event.dataTransfer?.types?.includes(this.tabDragType);
   }
 
   // ── Keyboard Shortcuts ────────────────────────────────────

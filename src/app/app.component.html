@@ -244,9 +244,17 @@
                *ngFor="let tab of groups[0].tabs"
                [class.active]="tab.id === groups[0].activeTabId"
                [class.preview]="tab.isPreview"
+               [class.dragging]="tab.id === draggingTabId"
+               [class.drop-before]="isDropBefore(tab, groups[0])"
+               [class.drop-after]="isDropAfter(tab, groups[0])"
+               draggable="true"
                (click)="activateTab(tab.id); $event.stopPropagation()"
                (dblclick)="promoteTab(tab)"
                (mouseup)="$event.button === 1 && closeTab(tab, $event)"
+               (dragstart)="onTabDragStart(tab, groups[0], $event)"
+               (dragover)="onTabDragOver(tab, groups[0], $event)"
+               (drop)="onTabDrop(tab, groups[0], $event)"
+               (dragend)="onTabDragEnd()"
                [title]="tab.filePath || tab.label || 'Untitled'">
             <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
             <svg class="tab-readonly-icon" *ngIf="tab.readOnly" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
@@ -256,12 +264,13 @@
             <button class="tab-move"
                     *ngIf="groups[0].tabs.length > 1"
                     (click)="moveTabToOtherGroup(tab, groups[0], $event)"
-                    [title]="groups.length > 1 ? 'Move to right pane' : 'Move to new right pane'">
+                    [title]="groups.length > 1 ? 'Move to right pane' : 'Move to new right pane'"
+                    draggable="false">
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M2 4.5h5M5 2l2.5 2.5L5 7"/>
               </svg>
             </button>
-            <button class="tab-close" (click)="closeTab(tab, $event)" title="Close">
+            <button class="tab-close" (click)="closeTab(tab, $event)" title="Close" draggable="false">
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                 <path d="M1 1l7 7M8 1l-7 7"/>
               </svg>
@@ -325,9 +334,17 @@
                *ngFor="let tab of groups[1].tabs"
                [class.active]="tab.id === groups[1].activeTabId"
                [class.preview]="tab.isPreview"
+               [class.dragging]="tab.id === draggingTabId"
+               [class.drop-before]="isDropBefore(tab, groups[1])"
+               [class.drop-after]="isDropAfter(tab, groups[1])"
+               draggable="true"
                (click)="activateTab(tab.id); $event.stopPropagation()"
                (dblclick)="promoteTab(tab)"
                (mouseup)="$event.button === 1 && closeTab(tab, $event)"
+               (dragstart)="onTabDragStart(tab, groups[1], $event)"
+               (dragover)="onTabDragOver(tab, groups[1], $event)"
+               (drop)="onTabDrop(tab, groups[1], $event)"
+               (dragend)="onTabDragEnd()"
                [title]="tab.filePath || tab.label || 'Untitled'">
             <span class="tab-dirty" *ngIf="tab.isDirty">●</span>
             <svg class="tab-readonly-icon" *ngIf="tab.readOnly" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
@@ -336,12 +353,13 @@
             <span class="tab-name">{{ getTabDisplayName(tab) }}</span>
             <button class="tab-move"
                     (click)="moveTabToOtherGroup(tab, groups[1], $event)"
-                    title="Move to left pane">
+                    title="Move to left pane"
+                    draggable="false">
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M7 4.5H2M4 2L1.5 4.5 4 7"/>
               </svg>
             </button>
-            <button class="tab-close" (click)="closeTab(tab, $event)" title="Close">
+            <button class="tab-close" (click)="closeTab(tab, $event)" title="Close" draggable="false">
               <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                 <path d="M1 1l7 7M8 1l-7 7"/>
               </svg>

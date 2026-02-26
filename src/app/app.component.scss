@@ -445,6 +445,29 @@
   flex-shrink: 0;
   transition: background var(--transition-fast), color var(--transition-fast);
 
+  &.dragging {
+    opacity: .45;
+  }
+
+  &.drop-before::before,
+  &.drop-after::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  &.drop-before::before {
+    left: 0;
+  }
+
+  &.drop-after::after {
+    right: 0;
+  }
+
   &:hover {
     background: var(--hover-bg);
     color: var(--text-primary);
