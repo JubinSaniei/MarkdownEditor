@@ -61,6 +61,9 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   searchResults: Array<{ name: string; path: string }> = [];
   searchLoading = false;
   private searchDebounce: any = null;
+  private searchToken = 0;
+  private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly MAX_SEARCH_RESULTS = 200;
 
   contextMenu: ContextMenu = { visible: false, x: 0, y: 0, node: null };
 
@@ -111,6 +114,7 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     document.removeEventListener('click', this.closeContextMenuBound);
     if (this.clickTimer) clearTimeout(this.clickTimer);
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    if (this.saveStateTimer) { clearTimeout(this.saveStateTimer); this.saveStateTimer = null; this.flushExplorerState(); }
     this.electronService.removeDirectoryChangedListener();
     for (const dirPath of this.watchedRoots) {
       this.electronService.unwatchDirectory(dirPath);
@@ -662,6 +666,14 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private saveExplorerState() {
+    if (this.saveStateTimer) clearTimeout(this.saveStateTimer);
+    this.saveStateTimer = setTimeout(() => {
+      this.saveStateTimer = null;
+      this.flushExplorerState();
+    }, 300);
+  }
+
+  private flushExplorerState() {
     const state: any = {
       recentExpanded: this.recentExpanded,
       workspaces: {} as Record<string, { expanded: boolean; expandedPaths: string[] }>
@@ -753,16 +765,28 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
       this.searchLoading = false;
       return;
     }
+    const token = ++this.searchToken;
     const results: Array<{ name: string; path: string }> = [];
     for (const ws of this.workspaces) {
-      await this.collectMatches(ws.path, query, results);
+      await this.collectMatches(ws.path, query, results, token, 0);
+      if (this.searchToken !== token) return; // query changed mid-traversal
     }
     this.searchResults = results;
+    if (results.length >= this.MAX_SEARCH_RESULTS) {
+      this.searchResults = results.slice(0, this.MAX_SEARCH_RESULTS);
+    }
     this.searchLoading = false;
     this.cdr.markForCheck();
   }
 
-  private async collectMatches(dirPath: string, query: string, out: Array<{ name: string; path: string }>) {
+  private async collectMatches(
+    dirPath: string,
+    query: string,
+    out: Array<{ name: string; path: string }>,
+    token: number,
+    depth: number
+  ) {
+    if (depth > 8 || out.length >= this.MAX_SEARCH_RESULTS || this.searchToken !== token) return;
     let items: any[];
     try {
       items = await this.electronService.getDirectoryContents(dirPath);
@@ -770,8 +794,9 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
       return;
     }
     for (const item of items) {
+      if (this.searchToken !== token || out.length >= this.MAX_SEARCH_RESULTS) return;
       if (item.isDirectory) {
-        await this.collectMatches(item.path, query, out);
+        await this.collectMatches(item.path, query, out, token, depth + 1);
       } else if (this.isMarkdown(item.name) && item.name.toLowerCase().includes(query)) {
         out.push({ name: item.name, path: item.path });
       }

@@ -7,3 +7,4 @@ dist-electron
 build
 dist
 .playwright-mcp
+plans/
