@@ -733,7 +733,10 @@ async function streamAnthropic(payload, signal, send) {
   const anthropicModule = require('@anthropic-ai/sdk');
   const Anthropic = anthropicModule.default || anthropicModule;
   const key = await getDecryptedKey('anthropic');
-  const client = new Anthropic({ apiKey: key });
+  const client = new Anthropic({
+    apiKey: key,
+    ...(payload.anthropicBaseUrl ? { baseURL: payload.anthropicBaseUrl } : {})
+  });
   const history = (payload.history || []).map(m => ({ role: m.role, content: m.content }));
   const stream = client.messages.stream({
     model: payload.anthropicModel || 'claude-sonnet-4-5',

@@ -154,6 +154,13 @@
       </div>
 
       <div class="asm-field">
+        <label class="asm-field-label">Base URL <span class="asm-hint">(optional — leave empty for default)</span></label>
+        <input class="asm-input" type="text"
+               placeholder="https://ai-gateway.example.com"
+               [(ngModel)]="settings.anthropic.baseUrl">
+      </div>
+
+      <div class="asm-field">
         <label class="asm-field-label">Model</label>
         <input class="asm-input" type="text"
                placeholder="claude-sonnet-4-5"

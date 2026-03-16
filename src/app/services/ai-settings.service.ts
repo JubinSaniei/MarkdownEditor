@@ -8,7 +8,7 @@ const LS_KEY = 'markdownEditorAiSettings';
 const DEFAULTS: AiNonSensitiveSettings = {
   activeProvider: 'openai',
   openai:    { model: 'gpt-4o', baseUrl: '' },
-  anthropic: { model: 'claude-sonnet-4-5' },
+  anthropic: { model: 'claude-sonnet-4-5', baseUrl: '' },
   bedrock:   { profile: 'default', region: 'us-east-1',
                modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0' },
 };

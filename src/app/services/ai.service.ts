@@ -29,7 +29,8 @@ export class AiService implements OnDestroy {
         payload['openaiModel']   = s.openai.model;
         payload['openaiBaseUrl'] = s.openai.baseUrl;
       } else if (request.provider === 'anthropic') {
-        payload['anthropicModel'] = s.anthropic.model;
+        payload['anthropicModel']   = s.anthropic.model;
+        payload['anthropicBaseUrl'] = s.anthropic.baseUrl;
       } else if (request.provider === 'bedrock') {
         payload['bedrockProfile'] = s.bedrock.profile;
         payload['bedrockRegion']  = s.bedrock.region;

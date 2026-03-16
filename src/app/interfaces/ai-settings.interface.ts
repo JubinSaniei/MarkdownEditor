@@ -7,6 +7,7 @@ export interface OpenAiProviderSettings {
 
 export interface AnthropicProviderSettings {
   model: string;    // default: 'claude-sonnet-4-5'
+  baseUrl: string;  // default: '' (empty = use SDK default)
 }
 
 export interface BedrockProviderSettings {
