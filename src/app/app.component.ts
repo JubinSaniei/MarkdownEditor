@@ -881,6 +881,13 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     return filePath.split(/[/\\]/).pop() || filePath;
   }
 
+  copyFilePath(event: MouseEvent) {
+    event.preventDefault();
+    if (this.currentFilePath) {
+      navigator.clipboard.writeText(this.currentFilePath);
+    }
+  }
+
   // ── Save Dropdown ─────────────────────────────────────────
 
   openAiSettings(): void  { this.showAiSettings = true; }

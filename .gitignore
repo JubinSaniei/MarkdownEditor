@@ -8,3 +8,4 @@ build
 dist
 .playwright-mcp
 plans/
+.forge

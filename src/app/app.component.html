@@ -409,9 +409,11 @@
     <!-- ── Status Bar ──────────────────────────────────────────── -->
     <footer class="status-bar">
       <div class="status-left">
-        <span class="status-item status-filepath" *ngIf="currentFilePath" [title]="currentFilePath">
+        <span class="status-item status-filepath" *ngIf="currentFilePath"
+              [title]="currentFilePath"
+              (contextmenu)="copyFilePath($event)">
           <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M2 1h5l2 2v7H2V1zm4 0v2h2"/></svg>
-          {{ getFileName(currentFilePath) }}
+          {{ currentFilePath }}
         </span>
       </div>
       <div class="status-right">

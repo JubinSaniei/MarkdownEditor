@@ -796,6 +796,13 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     if (this.contextMenu.node?.isDirectory) this.startNewFolder(this.contextMenu.node);
   }
 
+  contextCopyPath() {
+    if (this.contextMenu.node) {
+      navigator.clipboard.writeText(this.contextMenu.node.path);
+    }
+    this.closeContextMenu();
+  }
+
   contextRename() {
     if (this.contextMenu.node) this.startRename(this.contextMenu.node);
   }

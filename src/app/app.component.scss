@@ -756,6 +756,16 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+}
+
+.status-left {
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
+.status-right {
+  flex-shrink: 0;
 }
 
 .status-item {
@@ -774,7 +784,9 @@
 
 .status-filepath {
   user-select: text;
-  cursor: text;
+  cursor: pointer;
+  overflow: visible;
+  white-space: nowrap;
 }
 
 .status-version {
