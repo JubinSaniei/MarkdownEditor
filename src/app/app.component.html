@@ -1,4 +1,4 @@
-<div class="app-shell" [class.split-dragging]="isDraggingSplit" [class.ai-panel-dragging]="isDraggingAiPanel"
+<div class="app-shell" [class.split-dragging]="isDraggingSplit" [class.ai-panel-dragging]="isDraggingAiPanel" [class.sidebar-dragging]="isDraggingSidebar"
      (click)="onGlobalClick($event)"
      (keydown)="onGlobalKeyDown($event)"
      (dragenter)="onDragEnter($event)"
@@ -7,7 +7,8 @@
      (drop)="onDrop($event)">
 
   <!-- ── Sidebar ───────────────────────────────────────────── -->
-  <aside class="sidebar" [class.collapsed]="isExplorerCollapsed">
+  <aside class="sidebar" [class.collapsed]="isExplorerCollapsed"
+         [style.flex-basis.px]="isExplorerCollapsed ? 0 : sidebarWidth">>
     <app-file-explorer
       [workspaceRoots]="workspaceRoots"
       [recentFiles]="recentFiles"
@@ -20,6 +21,12 @@
       (recentFilesCleared)="clearRecentFiles()">
     </app-file-explorer>
   </aside>
+
+  <!-- ── Sidebar resize divider ──────────────────────────────── -->
+  <div class="sidebar-divider"
+       *ngIf="!isExplorerCollapsed"
+       [class.dragging]="isDraggingSidebar"
+       (mousedown)="onSidebarDividerMouseDown($event)"></div>
 
   <!-- ── Main Area ──────────────────────────────────────────── -->
   <div class="main-area">

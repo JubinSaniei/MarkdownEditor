@@ -159,6 +159,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private splitMoveHandler!: (e: MouseEvent) => void;
   private splitUpHandler!: () => void;
 
+  // ── Sidebar Resize ───────────────────────────────────────
+  sidebarWidth: number = 260;
+  isDraggingSidebar: boolean = false;
+  private readonly SIDEBAR_MIN_WIDTH = 180;
+  private readonly SIDEBAR_MAX_WIDTH = 500;
+
   // ── External Change Warning ───────────────────────────────
   showExternalChangeWarning: boolean = false;
 
@@ -744,6 +750,28 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.saveSettings();
   }
 
+  onSidebarDividerMouseDown(event: MouseEvent) {
+    event.preventDefault();
+    this.isDraggingSidebar = true;
+    const startX = event.clientX;
+    const startWidth = this.sidebarWidth;
+
+    const moveHandler = (e: MouseEvent) => {
+      const delta = e.clientX - startX;
+      this.sidebarWidth = Math.max(this.SIDEBAR_MIN_WIDTH, Math.min(this.SIDEBAR_MAX_WIDTH, startWidth + delta));
+    };
+
+    const upHandler = () => {
+      this.isDraggingSidebar = false;
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+      this.saveSettings();
+    };
+
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+  }
+
   setViewMode(mode: 'preview' | 'edit' | 'split') {
     this.viewMode = mode; // setter delegates to activeGroup
     if (mode === 'preview') this.isReplaceVisible = false;
@@ -1281,6 +1309,9 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       if (typeof s.aiPanelWidth === 'number') {
         this.aiPanelWidth = Math.max(220, Math.min(640, s.aiPanelWidth));
       }
+      if (typeof s.sidebarWidth === 'number') {
+        this.sidebarWidth = Math.max(this.SIDEBAR_MIN_WIDTH, Math.min(this.SIDEBAR_MAX_WIDTH, s.sidebarWidth));
+      }
 
       if (Array.isArray(s.groups) && s.groups.length > 0) {
         // New multi-group format
@@ -1325,6 +1356,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       fontSize: this.fontSize,
       groupSplitWidth: this.groupSplitWidth,
       aiPanelWidth: this.aiPanelWidth,
+      sidebarWidth: this.sidebarWidth,
       activeGroupId: this.activeGroupId,
       groups: this.groups.map(g => ({
         id: g.id,

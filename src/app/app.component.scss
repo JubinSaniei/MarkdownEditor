@@ -48,15 +48,14 @@
 .sidebar {
   flex: 0 0 260px;
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--border-subtle);
+  border-right: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: flex-basis var(--transition-base), border-color var(--transition-base);
+  transition: flex-basis var(--transition-base);
 
   &.collapsed {
     flex-basis: 0;
-    border-right-color: transparent;
     overflow: hidden;
   }
 
@@ -397,13 +396,31 @@
 }
 
 .app-shell.split-dragging,
-.app-shell.ai-panel-dragging {
+.app-shell.ai-panel-dragging,
+.app-shell.sidebar-dragging {
   user-select: none;
   cursor: col-resize;
 }
 
+.app-shell.sidebar-dragging .sidebar {
+  transition: none;
+}
+
 // ── AI Panel Divider ──────────────────────────────────────────
 .ai-panel-divider {
+  flex: 0 0 5px;
+  background: var(--border-subtle);
+  cursor: col-resize;
+  transition: background var(--transition-fast);
+  z-index: 1;
+
+  &:hover, &.dragging {
+    background: var(--accent-muted);
+  }
+}
+
+// ── Sidebar Divider ──────────────────────────────────────────
+.sidebar-divider {
   flex: 0 0 5px;
   background: var(--border-subtle);
   cursor: col-resize;
