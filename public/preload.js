@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiKeyDelete: (provider) => ipcRenderer.invoke('ai-key-delete', provider),
   aiKeyStatus: () => ipcRenderer.invoke('ai-key-status'),
 
+  // AI folder grep
+  grepMdFiles: (params) => ipcRenderer.invoke('grep-md-files', params),
+
   // AI streaming
   aiStreamStart: (payload) => ipcRenderer.send('ai-stream-start', payload),
   aiStreamCancel: (requestId) => ipcRenderer.invoke('ai-stream-cancel', requestId),

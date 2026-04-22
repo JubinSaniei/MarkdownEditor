@@ -22,6 +22,7 @@ interface EditorTab {
   isPreview: boolean; // temporary tab reused by single-click; promoted on dblclick or edit
   readOnly?: boolean;
   label?: string; // overrides display name when set
+  externallyChanged?: boolean; // true when file was modified outside the app
 }
 
 interface EditorGroup {
@@ -166,7 +167,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly SIDEBAR_MAX_WIDTH = 500;
 
   // ── External Change Warning ───────────────────────────────
-  showExternalChangeWarning: boolean = false;
 
   // ── Search State ──────────────────────────────────────────
   searchState: SearchState = {
@@ -254,8 +254,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.electronService.onFileChanged((changedPath: string) => {
       if (this.saveSuppressionSet.has(changedPath)) return;
-      if (changedPath === this.currentFilePath) {
-        this.showExternalChangeWarning = true;
+      for (const group of this.groups) {
+        for (const tab of group.tabs) {
+          if (tab.filePath === changedPath) {
+            this.ngZone.run(() => { tab.externallyChanged = true; });
+          }
+        }
       }
     });
 
@@ -516,7 +520,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       this.activeGroupId = group.id;
       group.activeTabId = tabId;
     }
-    this.showExternalChangeWarning = false;
     if (this.searchState.isActive) this.closeSearch();
     this.updateDirtyState();
     this.saveSettings();
@@ -544,7 +547,6 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       if (group.tabs.length > 0) {
         group.activeTabId = group.tabs[Math.min(idx, group.tabs.length - 1)].id;
         if (this.activeGroupId === group.id) {
-          this.showExternalChangeWarning = false;
           this.updateDirtyState();
         }
       } else {
@@ -713,17 +715,22 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── File Watcher ──────────────────────────────────────────
 
-  async reloadCurrentFile() {
-    const tab = this.activeTab;
+  async reloadFile(tab: EditorTab) {
     if (!tab?.filePath) return;
     tab.content = await this.fileService.readFile(tab.filePath);
     tab.isDirty = false;
-    this.showExternalChangeWarning = false;
+    tab.externallyChanged = false;
     this.updateDirtyState();
   }
 
-  dismissExternalChange() {
-    this.showExternalChangeWarning = false;
+  dismissExternalChange(tab: EditorTab) {
+    tab.externallyChanged = false;
+  }
+
+  /** Check whether a group's active tab has been externally changed. */
+  isGroupActiveTabChanged(group: EditorGroup): boolean {
+    const tab = group.tabs.find(t => t.id === group.activeTabId);
+    return tab?.externallyChanged === true;
   }
 
   // ── Recent Files ──────────────────────────────────────────

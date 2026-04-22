@@ -673,6 +673,73 @@ ipcMain.handle('ai-key-status', async () => {
 });
 
 // ============================================================
+// IPC Handlers — AI Folder Grep
+// ============================================================
+
+const GREP_EXCLUDED_DIRS = new Set([
+  'node_modules', '.git', '.angular', 'dist', 'dist-electron',
+  'build', '__pycache__', '.vscode', '.idea', '.cache'
+]);
+
+ipcMain.handle('grep-md-files', async (event, { dirPath, keywords, maxResults }) => {
+  try {
+    const { glob } = require('fs/promises');
+    const limit = maxResults || 10;
+    const MAX_FILE_SIZE = 102400; // 100 KB
+
+    // 1. Collect all .md files using built-in glob
+    const filePaths = [];
+    for await (const entry of glob('**/*.md', {
+      cwd: dirPath,
+      exclude: (name) => GREP_EXCLUDED_DIRS.has(name)
+    })) {
+      filePaths.push(path.join(dirPath, entry));
+    }
+
+    // 2. Read each file and score by keyword matches
+    //    Headings (# lines) get 3× weight, body text gets 1×.
+    const scored = [];
+    for (const filePath of filePaths) {
+      try {
+        const stat = await fs.stat(filePath);
+        if (stat.size > MAX_FILE_SIZE) continue;
+
+        const content = await fs.readFile(filePath, 'utf-8');
+        const lines = content.split('\n');
+        const headingText = lines.filter(l => l.startsWith('#')).join(' ').toLowerCase();
+        const bodyText    = lines.filter(l => !l.startsWith('#')).join(' ').toLowerCase();
+
+        let score = 0;
+        for (const kw of keywords) {
+          const kwLower = kw.toLowerCase();
+          if (headingText.includes(kwLower)) score += 3;
+          if (bodyText.includes(kwLower))    score += 1;
+        }
+
+        if (score > 0) {
+          const relativePath = path.relative(dirPath, filePath).replace(/\\/g, '/');
+          scored.push({
+            name: path.basename(filePath),
+            path: filePath,
+            relativePath,
+            content,
+            score
+          });
+        }
+      } catch (_) { /* skip unreadable files */ }
+    }
+
+    // 3. Return top N by score (highest first)
+    return scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  } catch (err) {
+    console.error('grep-md-files error:', err);
+    return [];
+  }
+});
+
+// ============================================================
 // IPC Handlers — AI Streaming
 // ============================================================
 

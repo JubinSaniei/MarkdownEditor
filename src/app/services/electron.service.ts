@@ -141,6 +141,10 @@ export class ElectronService {
 
   // --- AI Key Management ---
 
+  async grepMdFiles(dirPath: string, keywords: string[], maxResults?: number): Promise<{ name: string; path: string; relativePath: string; content: string; score: number }[]> {
+    return this.isElectron ? await window.electronAPI.grepMdFiles({ dirPath, keywords, maxResults }) : [];
+  }
+
   async aiKeySet(provider: 'openai' | 'anthropic', key: string): Promise<{ success: boolean; error?: string }> {
     if (this.isElectron) return await window.electronAPI.aiKeySet(provider, key);
     return { success: false, error: 'Electron not available' };

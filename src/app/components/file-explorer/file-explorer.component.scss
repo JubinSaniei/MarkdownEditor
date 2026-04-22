@@ -231,6 +231,11 @@
   }
 }
 
+.dir-row[draggable="true"] {
+  cursor: grab;
+  &:active { cursor: grabbing; }
+}
+
 // Hover reveal for row actions
 .row-actions {
   display: flex;

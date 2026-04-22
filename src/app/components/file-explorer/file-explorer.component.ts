@@ -941,6 +941,25 @@ export class FileExplorerComponent implements OnInit, OnChanges, OnDestroy {
     return filePath;
   }
 
+  // ── Folder Drag (for AI panel drop) ────────────────────────────
+
+  private readonly FOLDER_DRAG_TYPE = 'application/x-md-editor-folder';
+
+  onFolderDragStart(node: FileTreeNode, event: DragEvent): void {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData(this.FOLDER_DRAG_TYPE, JSON.stringify({
+      path: node.path,
+      name: node.name
+    }));
+  }
+
+  onRootFolderDragStart(path: string, name: string, event: DragEvent): void {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData(this.FOLDER_DRAG_TYPE, JSON.stringify({ path, name }));
+  }
+
   trackByWorkspacePath(_: number, ws: RootEntry): string {
     return ws.path;
   }

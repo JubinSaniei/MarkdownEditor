@@ -132,7 +132,9 @@
     <!-- ── Workspace Trees ──────────────────────────────────────── -->
     <div class="tree-section" *ngFor="let ws of workspaces; trackBy: trackByWorkspacePath">
 
-      <div class="section-header ws-section-header" (click)="toggleWorkspaceExpanded(ws)">
+      <div class="section-header ws-section-header" (click)="toggleWorkspaceExpanded(ws)"
+           draggable="true"
+           (dragstart)="onRootFolderDragStart(ws.path, getWorkspaceName(ws.path), $event)">
         <svg class="section-arrow" [class.open]="ws.expanded" width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
           <path d="M2 1l4 3.5L2 8"/>
         </svg>
@@ -268,7 +270,9 @@
         <div class="sub-root" *ngFor="let subRoot of vws.subRoots">
 
           <!-- Sub-root header -->
-          <div class="sub-root-header" (click)="toggleSubRoot(subRoot)">
+          <div class="sub-root-header" (click)="toggleSubRoot(subRoot)"
+               draggable="true"
+               (dragstart)="onRootFolderDragStart(subRoot.path, getWorkspaceName(subRoot.path), $event)">
             <svg class="section-arrow sub-root-arrow" [class.open]="subRoot.expanded" width="8" height="8" viewBox="0 0 9 9" fill="currentColor">
               <path d="M2 1l4 3.5L2 8" *ngIf="!subRoot.loading"/>
               <circle *ngIf="subRoot.loading" cx="4.5" cy="4.5" r="3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="10" class="spin"/>
@@ -349,6 +353,8 @@
          [class.selected]="selectedPath === node.path"
          [style.padding-left.px]="depth * 14 + 8"
          [title]="node.path"
+         draggable="true"
+         (dragstart)="onFolderDragStart(node, $event)"
          (click)="toggleNode(node)"
          (contextmenu)="showContextMenu($event, node)"
          tabindex="0"

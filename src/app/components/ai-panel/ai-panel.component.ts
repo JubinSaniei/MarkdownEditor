@@ -47,6 +47,22 @@ interface WorkspaceFile {
   content?: string;
 }
 
+interface ContextFolder {
+  path: string;
+  name: string;
+}
+
+const STOP_WORDS = new Set([
+  'a','an','the','i','me','my','we','our','you','your','he','she','it','its',
+  'they','them','their','in','on','at','to','for','of','from','by','with',
+  'about','into','through','between','and','or','but','nor','so','yet',
+  'is','are','was','were','be','been','being','has','have','had','do','does','did',
+  'will','would','shall','should','can','could','may','might','must',
+  'how','what','where','when','why','which','who','whom',
+  'this','that','these','those','not','no','if','then','than','as',
+  'all','each','every','some','any','just','also','very','too',
+]);
+
 @Component({
   selector: 'app-ai-panel',
   templateUrl: './ai-panel.component.html',
@@ -79,6 +95,23 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
   contextFiles: WorkspaceFile[] = [];
   isLoadingFiles: boolean = false;
 
+  // Folder context
+  contextFolders: ContextFolder[] = [];
+  isSearchingFolders: boolean = false;
+
+  // Folder picker
+  showFolderPicker: boolean = false;
+  folderSearch: string = '';
+  workspaceFolders: ContextFolder[] = [];
+  isLoadingFolders: boolean = false;
+
+  // Folder drop from explorer
+  isDraggingFolder: boolean = false;
+  private folderDragCounter: number = 0;
+  private readonly FOLDER_DRAG_TYPE = 'application/x-md-editor-folder';
+
+  @ViewChild('folderSearchInput') folderSearchInputRef?: ElementRef<HTMLInputElement>;
+
   private streamSub?: Subscription;
   private shouldScrollToBottom = false;
   // True when the user has manually scrolled up during streaming.
@@ -99,6 +132,16 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     const html = panelMarked.parse(content) as string;
     const clean = DOMPurify.sanitize(html);
     return this.sanitizer.bypassSecurityTrustHtml(clean);
+  }
+
+  renderStreamingMarkdown(content: string): SafeHtml {
+    if (!content) return this.sanitizer.bypassSecurityTrustHtml('<span class="aip-cursor"></span>');
+    const html = panelMarked.parse(content) as string;
+    const clean = DOMPurify.sanitize(html);
+    // Insert blinking cursor before the last closing block tag
+    const cursor = '<span class="aip-cursor"></span>';
+    const patched = clean.replace(/<\/(p|li|h[1-6]|pre|blockquote|td|code)>(?![\s\S]*<\/(p|li|h[1-6]|pre|blockquote|td|code)>)/, cursor + '</$1>');
+    return this.sanitizer.bypassSecurityTrustHtml(patched === clean ? clean + cursor : patched);
   }
 
   get activeProvider(): AiProvider {
@@ -132,6 +175,15 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     return this.workspaceFiles.filter(f =>
       !attached.has(f.path) &&
       (!q || f.relativePath.toLowerCase().includes(q))
+    );
+  }
+
+  get filteredFolders(): ContextFolder[] {
+    const q = this.folderSearch.toLowerCase();
+    const attached = new Set(this.contextFolders.map(f => f.path));
+    return this.workspaceFolders.filter(f =>
+      !attached.has(f.path) &&
+      (!q || f.name.toLowerCase().includes(q))
     );
   }
 
@@ -169,12 +221,49 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     }
   }
 
+  // ── Folder Drop from Explorer ───────────────────────────────
+
+  onFolderDragEnter(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes(this.FOLDER_DRAG_TYPE)) return;
+    event.preventDefault();
+    this.folderDragCounter++;
+    this.isDraggingFolder = true;
+  }
+
+  onFolderDragOver(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes(this.FOLDER_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  onFolderDragLeave(event: DragEvent): void {
+    this.folderDragCounter--;
+    if (this.folderDragCounter <= 0) {
+      this.folderDragCounter = 0;
+      this.isDraggingFolder = false;
+    }
+  }
+
+  onFolderDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.folderDragCounter = 0;
+    this.isDraggingFolder = false;
+    const raw = event.dataTransfer?.getData(this.FOLDER_DRAG_TYPE);
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw) as { path: string; name: string };
+      if (data.path && !this.contextFolders.find(f => f.path === data.path)) {
+        this.contextFolders.push({ path: data.path, name: data.name || data.path.split(/[/\\]/).pop() || data.path });
+      }
+    } catch (_) {}
+  }
+
   // ── File Picker ──────────────────────────────────────────────
 
   async openFilePicker(): Promise<void> {
     this.showFilePicker = true;
     this.fileSearch = '';
-    if (this.workspaceFiles.length === 0 && this.workspaceRoots.length > 0) {
+    if (this.workspaceFiles.length === 0) {
       await this.loadWorkspaceFiles();
     }
     setTimeout(() => this.fileSearchInputRef?.nativeElement.focus(), 0);
@@ -200,9 +289,45 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
   private async loadWorkspaceFiles(): Promise<void> {
     this.isLoadingFiles = true;
     this.workspaceFiles = [];
+
+    // Real workspace roots
     for (const root of this.workspaceRoots) {
       await this.collectMdFiles(root, root, 0);
     }
+
+    // Virtual workspace sub-roots + individual files (from localStorage)
+    try {
+      const raw = localStorage.getItem('explorerState');
+      if (raw) {
+        const state = JSON.parse(raw);
+        if (Array.isArray(state.virtualWorkspaces)) {
+          const existing = new Set(this.workspaceFiles.map(f => f.path));
+          for (const vws of state.virtualWorkspaces) {
+            const wsLabel = vws.name || 'Virtual';
+
+            // Sub-root folders — recurse for .md files
+            if (Array.isArray(vws.subRoots)) {
+              for (const sr of vws.subRoots) {
+                if (!sr.path) continue;
+                await this.collectMdFiles(sr.path, sr.path, 0);
+              }
+            }
+
+            // Individual files added directly to the virtual workspace
+            if (Array.isArray(vws.files)) {
+              for (const filePath of vws.files) {
+                if (!filePath || existing.has(filePath)) continue;
+                if (!/\.(md|markdown)$/i.test(filePath)) continue;
+                const name = filePath.split(/[/\\]/).pop() || filePath;
+                this.workspaceFiles.push({ name, path: filePath, relativePath: `${wsLabel}/${name}` });
+                existing.add(filePath);
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     this.isLoadingFiles = false;
   }
 
@@ -224,9 +349,131 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     } catch (_) {}
   }
 
+  // ── Folder Picker ─────────────────────────────────────────────
+
+  async openFolderPicker(): Promise<void> {
+    this.showFolderPicker = true;
+    this.folderSearch = '';
+    if (this.workspaceFolders.length === 0) {
+      await this.loadWorkspaceFolders();
+    }
+    setTimeout(() => this.folderSearchInputRef?.nativeElement.focus(), 0);
+  }
+
+  closeFolderPicker(): void {
+    this.showFolderPicker = false;
+    this.folderSearch = '';
+  }
+
+  addContextFolder(folder: ContextFolder): void {
+    if (!this.contextFolders.find(f => f.path === folder.path)) {
+      this.contextFolders.push({ ...folder });
+    }
+    this.closeFolderPicker();
+  }
+
+  removeContextFolder(folderPath: string): void {
+    this.contextFolders = this.contextFolders.filter(f => f.path !== folderPath);
+  }
+
+  private async loadWorkspaceFolders(): Promise<void> {
+    this.isLoadingFolders = true;
+    this.workspaceFolders = [];
+
+    // Real workspace roots and their sub-folders
+    for (const root of this.workspaceRoots) {
+      const rootName = root.split(/[/\\]/).pop() || root;
+      this.workspaceFolders.push({ path: root, name: rootName });
+      await this.collectFolders(root, root, 0);
+    }
+
+    // Virtual workspace sub-roots (read from localStorage, same source as file explorer)
+    try {
+      const raw = localStorage.getItem('explorerState');
+      if (raw) {
+        const state = JSON.parse(raw);
+        if (Array.isArray(state.virtualWorkspaces)) {
+          for (const vws of state.virtualWorkspaces) {
+            // Sub-root folders
+            if (Array.isArray(vws.subRoots)) {
+              for (const sr of vws.subRoots) {
+                if (!sr.path || this.workspaceFolders.some(f => f.path === sr.path)) continue;
+                const label = (vws.name || '') + '/' + (sr.path.split(/[/\\]/).pop() || sr.path);
+                this.workspaceFolders.push({ path: sr.path, name: label });
+                await this.collectFolders(sr.path, sr.path, 0);
+              }
+            }
+
+            // Individual files — expose their parent directories
+            if (Array.isArray(vws.files)) {
+              for (const filePath of vws.files) {
+                if (!filePath) continue;
+                const sep = filePath.includes('/') ? '/' : '\\';
+                const parts = filePath.split(sep);
+                parts.pop(); // remove filename
+                if (parts.length === 0) continue;
+                const parentDir = parts.join(sep);
+                if (this.workspaceFolders.some(f => f.path === parentDir)) continue;
+                const dirName = (vws.name || '') + '/' + (parts[parts.length - 1] || parentDir);
+                this.workspaceFolders.push({ path: parentDir, name: dirName });
+                await this.collectFolders(parentDir, parentDir, 0);
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    this.isLoadingFolders = false;
+  }
+
+  private async collectFolders(rootPath: string, dirPath: string, depth: number): Promise<void> {
+    if (depth > 6) return;
+    try {
+      const items = await this.electronService.getDirectoryContents(dirPath);
+      for (const item of items) {
+        if (item.isDirectory) {
+          const relativePath = item.path
+            .replace(rootPath, '')
+            .replace(/^[/\\]/, '')
+            .replace(/\\/g, '/');
+          this.workspaceFolders.push({ path: item.path, name: relativePath });
+          await this.collectFolders(rootPath, item.path, depth + 1);
+        }
+      }
+    } catch (_) {}
+  }
+
+  private extractKeywords(text: string): string[] {
+    return text.toLowerCase().split(/\s+/)
+      .filter(w => w.length > 1 && !STOP_WORDS.has(w));
+  }
+
+  /** Recursively discover all .md files under a directory using the existing getDirectoryContents IPC. */
+  private async discoverMdFiles(
+    rootPath: string, dirPath: string, depth: number,
+    out: { name: string; path: string; relativePath: string }[]
+  ): Promise<void> {
+    if (depth > 6) return;
+    try {
+      const items = await this.electronService.getDirectoryContents(dirPath);
+      for (const item of items) {
+        if (item.isDirectory) {
+          await this.discoverMdFiles(rootPath, item.path, depth + 1, out);
+        } else if (/\.(md|markdown)$/i.test(item.name)) {
+          const relativePath = item.path
+            .replace(rootPath, '')
+            .replace(/^[/\\]/, '')
+            .replace(/\\/g, '/');
+          out.push({ name: item.name, path: item.path, relativePath });
+        }
+      }
+    } catch (_) {}
+  }
+
   // ── Chat ─────────────────────────────────────────────────────
 
-  send(): void {
+  async send(): Promise<void> {
     const text = this.promptText.trim();
     if (!text || this.isStreaming) return;
 
@@ -249,6 +496,44 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     for (const file of this.contextFiles) {
       if (file.content !== undefined) {
         contextParts.push(`File "${file.relativePath}":\n\`\`\`\n${file.content}\n\`\`\``);
+      }
+    }
+
+    // Gather context from attached folders
+    if (this.contextFolders.length > 0) {
+      this.isSearchingFolders = true;
+      try {
+        const keywords = this.extractKeywords(text);
+        for (const folder of this.contextFolders) {
+          // Discover all .md files using existing getDirectoryContents IPC
+          const allFiles: { name: string; path: string; relativePath: string }[] = [];
+          await this.discoverMdFiles(folder.path, folder.path, 0, allFiles);
+
+          // Always tell the AI the full file listing
+          const listing = allFiles.map(f => f.relativePath).join('\n');
+          contextParts.push(`Folder "${folder.name}" contains ${allFiles.length} markdown file(s):\n${listing}`);
+
+          // For small folders (≤20 files), send all file contents directly.
+          // For larger folders, use keyword search to pick the most relevant files.
+          const SMALL_FOLDER_THRESHOLD = 20;
+          if (allFiles.length <= SMALL_FOLDER_THRESHOLD) {
+            for (const file of allFiles) {
+              try {
+                const content = await this.electronService.readFile(file.path);
+                contextParts.push(`File "${file.relativePath}" (from ${folder.name}):\n\`\`\`\n${content}\n\`\`\``);
+              } catch (_) {}
+            }
+          } else if (keywords.length > 0) {
+            const matches = await this.electronService.grepMdFiles(folder.path, keywords, 10);
+            for (const file of matches) {
+              contextParts.push(`File "${file.relativePath}" (from ${folder.name}):\n\`\`\`\n${file.content}\n\`\`\``);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Folder context error:', err);
+      } finally {
+        this.isSearchingFolders = false;
       }
     }
 

@@ -530,6 +530,19 @@
   line-height: 1;
 }
 
+.tab-external-change {
+  color: #e879f9;
+  font-size: 9px;
+  flex-shrink: 0;
+  line-height: 1;
+  animation: pulse-external 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-external {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
 .tab-readonly-icon {
   flex-shrink: 0;
   color: var(--text-tertiary);

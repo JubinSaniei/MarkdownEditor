@@ -404,6 +404,33 @@
   }
 }
 
+.aip-add-folder-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-tertiary);
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+
+  &:hover {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-color: var(--accent-muted);
+  }
+
+  &.has-folders {
+    color: var(--accent);
+    border-color: var(--accent-muted);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+}
+
 .aip-insert-last-btn {
   display: flex;
   align-items: center;
@@ -469,6 +496,53 @@
   flex-shrink: 0;
 
   &:hover { opacity: 1; }
+}
+
+.aip-folder-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 7px;
+  background: color-mix(in srgb, var(--warning, #e8a317) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #e8a317) 35%, transparent);
+  border-radius: var(--radius-full);
+  color: var(--warning, #e8a317);
+  font-size: 11px;
+  max-width: 180px;
+}
+
+.aip-folder-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.aip-folder-chip-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--warning, #e8a317);
+  display: flex;
+  align-items: center;
+  opacity: .7;
+  flex-shrink: 0;
+
+  &:hover { opacity: 1; }
+}
+
+.aip-searching-folders {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 // ── File Picker ───────────────────────────────────────────────
@@ -576,6 +650,36 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+// ── Folder Drop Overlay ───────────────────────────────────────
+.aip-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--sidebar-bg) 85%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.aip-drop-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 32px;
+  border: 2px dashed var(--accent-muted);
+  border-radius: var(--radius-lg);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+
+  span {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
 }
 
 // ── Input Area ────────────────────────────────────────────────
