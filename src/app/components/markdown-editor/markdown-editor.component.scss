@@ -1,3 +1,11 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .editor-wrapper {
   height: 100%;
   display: flex;
@@ -230,170 +238,32 @@
   overflow: hidden;
 }
 
-// ── Line Numbers Gutter ───────────────────────────────────────
-.line-numbers {
-  flex: 0 0 48px;
-  padding: 32px 0;
-  background: var(--bg-primary);
-  border-right: 1px solid var(--border-subtle);
-  overflow: hidden;       // scroll is driven by the textarea scroll event
-  user-select: none;
-  pointer-events: none;
-}
-
-.line-number {
-  font-family: var(--font-mono);
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height, 21px);
-  color: var(--text-tertiary);
-  text-align: right;
-  padding-right: 10px;
-  opacity: 0.55;
-}
-
-// ── Editor Area (backdrop + textarea) ─────────────────────────
-// Provides the position:relative context for the absolute backdrop
-.editor-area {
+.cm-host {
   flex: 1;
-  position: relative;
+  overflow: hidden;
   display: flex;
-  overflow: hidden;
-  background: var(--bg-secondary);
+  flex-direction: column;
+  min-height: 0;
 }
 
-// ── Search highlight clip + backdrop ──────────────────────────
-// The clip container sits behind the textarea (z-index 1 vs 2) and
-// clips the full-height backdrop div. Scrolling is done via CSS
-// transform instead of native scrollTop, which eliminates the
-// scrollHeight mismatch between <div> and <textarea>.
-.highlight-clip {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.highlight-backdrop {
-  padding: 32px 24px;
-  font-family: var(--font-mono);
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height, 21px);
-  color: var(--text-primary);
-  background: transparent;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  border: none;
-  margin: 0;
-  box-sizing: border-box;
-  will-change: transform;
-}
-
-// ── Search overlay (sits above syntax backdrop, below textarea) ───
-.search-overlay-clip {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.search-overlay {
-  padding: 32px 24px;
-  font-family: var(--font-mono);
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height, 21px);
-  color: transparent;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  border: none;
-  margin: 0;
-  box-sizing: border-box;
-  will-change: transform;
-}
-
-:host ::ng-deep .search-overlay-clip {
-  .search-highlight {
-    background-color: rgba(255, 214, 0, .45);
-    border-radius: 2px;
-
-    &.current {
-      background-color: rgba(255, 140, 0, .65);
-      box-shadow: 0 0 0 1px rgba(255, 100, 0, .7);
-    }
+// CM6 injects .cm-editor/.cm-scroller outside Angular's template compiler,
+// so emulated view encapsulation never attaches _ngcontent attrs to them —
+// scoped selectors like ".cm-host .cm-editor" silently fail to match.
+// Must use ::ng-deep to reach into CM6's own DOM.
+:host ::ng-deep .cm-host {
+  .cm-editor {
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+    height: 100%;
   }
-}
 
-// Syntax spans are injected via innerHTML (not Angular template),
-// so they don't receive the component's _ngcontent attribute. Use ::ng-deep.
-:host ::ng-deep .highlight-clip {
-  // ── Markdown syntax colors (VS Code Dark+/Light+ pattern) ──
-  .syn-h1, .syn-h2 { color: var(--syn-heading); font-weight: 700; }
-  .syn-h3          { color: var(--syn-heading); font-weight: 600; }
-  .syn-h4, .syn-h5, .syn-h6 { color: var(--syn-heading); }
-
-  .syn-marker      { color: var(--syn-punct); }
-  .syn-fence       { color: var(--syn-punct); }
-  .syn-code-line   { color: var(--text-primary); }
-  .syn-inline-code { color: var(--syn-code); }
-
-  .syn-bold        { font-weight: 700; color: var(--syn-heading); }
-  .syn-italic      { font-style: italic; color: var(--syn-heading); }
-  .syn-strike      { text-decoration: line-through; }
-
-  .syn-link-text   { color: var(--syn-link); }
-  .syn-url         { color: var(--syn-url); text-decoration: underline; }
-  .syn-punct       { color: var(--syn-punct); }
-
-  .syn-bq-marker   { color: var(--syn-quote); }
-  .syn-blockquote  { color: var(--syn-quote); font-style: italic; }
-
-  .syn-hr          { color: var(--text-tertiary); }
-  .syn-list-marker { color: var(--text-primary); }
-
-  // ── highlight.js classes inside fenced code blocks ──────────
-  .syn-code-line {
-    .hljs-comment,
-    .hljs-quote          { color: var(--syn-quote); font-style: italic; }
-
-    .hljs-keyword,
-    .hljs-selector-tag,
-    .hljs-built_in,
-    .hljs-name,
-    .hljs-tag            { color: var(--syn-heading); }
-
-    .hljs-string,
-    .hljs-title,
-    .hljs-section,
-    .hljs-attribute,
-    .hljs-literal,
-    .hljs-template-tag,
-    .hljs-template-variable,
-    .hljs-type            { color: var(--syn-code); }
-
-    .hljs-number,
-    .hljs-regexp,
-    .hljs-link            { color: var(--syn-url); }
-
-    .hljs-variable,
-    .hljs-params,
-    .hljs-meta            { color: var(--text-primary); }
-
-    .hljs-deletion        { color: var(--danger, #f44747); }
-    .hljs-addition        { color: var(--success, #4ec9b0); }
-
-    .hljs-emphasis        { font-style: italic; }
-    .hljs-strong          { font-weight: 700; }
+  .cm-scroller {
+    overflow: auto;
   }
 }
 
 // ── Inline AI Bar ─────────────────────────────────────────────
-
-// Glow on the editor textarea when inline AI is active
-.inline-ai-active .markdown-editor {
-  box-shadow: inset 0 0 0 2px var(--accent-muted);
-  transition: box-shadow var(--transition-fast);
-}
 
 .inline-ai-bar {
   position: absolute;
@@ -967,36 +837,13 @@
   svg { flex-shrink: 0; }
 }
 
-// ── Textarea ──────────────────────────────────────────────────
-.markdown-editor {
-  position: relative;
-  flex: 1;
-  border: none;
-  outline: none;
-  padding: 32px 24px;
-  font-family: var(--font-mono);
-  font-size: var(--editor-font-size);
-  line-height: var(--editor-line-height, 21px);
-  resize: none;
-  background: transparent;
-  color: transparent;
-  z-index: 2;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-y: scroll;
-  overflow-x: hidden;
-  box-sizing: border-box;
-  caret-color: var(--text-primary);
-
-  &::placeholder {
-    color: var(--text-tertiary);
-    font-style: italic;
-  }
-
-  // Keep text invisible in selection so the backdrop's syntax colors show
-  // through the semi-transparent selection tint instead of the raw text
-  &::selection {
-    background-color: rgba(100, 148, 237, 0.35);
-    color: transparent;
-  }
+// ── Search highlights (@codemirror/search) ──────────────────────
+:host ::ng-deep .cm-searchMatch {
+  background-color: rgba(255, 214, 0, .45);
+  border-radius: 2px;
 }
+
+:host ::ng-deep .cm-searchMatch-selected {
+  background-color: rgba(255, 140, 0, .65);
+}
+

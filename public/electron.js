@@ -29,6 +29,7 @@ async function saveWindowState(win) {
 // File watcher state
 const fileWatchers = new Map();
 const changeTimers = new Map();
+const fileStatCache = new Map(); // filePath -> { mtimeMs, size }
 
 // Directory watcher state
 const dirWatchers = new Map();
@@ -536,17 +537,39 @@ ipcMain.handle('watch-file', (event, filePath) => {
     try { fileWatchers.get(filePath).close(); } catch (_) {}
   }
   try {
+    // Snapshot current mtime/size so later events that don't actually
+    // change file content (e.g. mere opens/touches) can be filtered out.
+    try {
+      const stat = fsSync.statSync(filePath);
+      fileStatCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size });
+    } catch (_) {
+      fileStatCache.delete(filePath);
+    }
     const watcher = fsSync.watch(filePath, () => {
       if (changeTimers.has(filePath)) clearTimeout(changeTimers.get(filePath));
       changeTimers.set(filePath, setTimeout(() => {
         changeTimers.delete(filePath);
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        // Cheap stat check — avoids flagging events where content didn't
+        // actually change (e.g. file opened elsewhere, mtime touch only).
+        let changed = true;
+        try {
+          const stat = fsSync.statSync(filePath);
+          const prev = fileStatCache.get(filePath);
+          if (prev && prev.mtimeMs === stat.mtimeMs && prev.size === stat.size) {
+            changed = false;
+          }
+          fileStatCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size });
+        } catch (_) {
+          // File may have been deleted/renamed — still notify.
+        }
+        if (changed && mainWindow && !mainWindow.isDestroyed()) {
           try { mainWindow.webContents.send('file-changed', filePath); } catch (_) {}
         }
       }, 500));
     });
     watcher.on('error', () => {
       fileWatchers.delete(filePath);
+      fileStatCache.delete(filePath);
       if (changeTimers.has(filePath)) {
         clearTimeout(changeTimers.get(filePath));
         changeTimers.delete(filePath);
@@ -564,6 +587,7 @@ ipcMain.handle('unwatch-file', (event, filePath) => {
     try { fileWatchers.get(filePath).close(); } catch (_) {}
     fileWatchers.delete(filePath);
   }
+  fileStatCache.delete(filePath);
   if (changeTimers.has(filePath)) {
     clearTimeout(changeTimers.get(filePath));
     changeTimers.delete(filePath);

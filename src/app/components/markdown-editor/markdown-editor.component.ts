@@ -1,8 +1,16 @@
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnChanges, OnDestroy, HostListener, SimpleChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnChanges, OnDestroy, HostListener, SimpleChanges, NgZone } from '@angular/core';
 import { Subscription } from 'rxjs';
-import hljs from 'highlight.js';
 import { AiService } from '../../services/ai.service';
 import { AiSettingsService } from '../../services/ai-settings.service';
+import { EditorView, keymap, lineNumbers as cmLineNumbers, drawSelection, highlightActiveLine, ViewUpdate } from '@codemirror/view';
+import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { languages } from '@codemirror/language-data';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
+import { search, SearchQuery, setSearchQuery } from '@codemirror/search';
+import { SearchOptions } from '../../interfaces/search.interface';
 
 type InlineAiScope = 'selection' | 'section' | 'document';
 type InlineAiMode = 'edit' | 'ask';
@@ -43,13 +51,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   @Input() content: string = '';
   @Input() readOnly = false;
   @Output() contentChange = new EventEmitter<string>();
-  @ViewChild('editor') editorElement!: ElementRef<HTMLTextAreaElement>;
-  @ViewChild('highlightBackdrop') highlightBackdrop!: ElementRef<HTMLDivElement>;
-  @ViewChild('lineNumbers') lineNumbersEl!: ElementRef<HTMLDivElement>;
+  @ViewChild('cmHost') cmHost!: ElementRef<HTMLDivElement>;
   @ViewChild('cheatsheetPanel') cheatsheetPanelEl!: ElementRef<HTMLDivElement>;
   @ViewChild('cheatsheetBtn') cheatsheetBtnEl!: ElementRef<HTMLButtonElement>;
   @ViewChild('inlineAiInput') inlineAiInputRef?: ElementRef<HTMLInputElement>;
-  @ViewChild('searchOverlay') searchOverlayEl?: ElementRef<HTMLDivElement>;
+
+  private editorView: EditorView | null = null;
+  private readOnlyCompartment = new Compartment();
+  private spellcheckCompartment = new Compartment();
+  private internalUpdate = false;
 
   showCheatsheet = false;
   spellcheckEnabled = false;
@@ -105,7 +115,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
   promptHistory: string[] = [];
   private historyIndex = -1;
-  private internalContentUpdate = false;
   diffIgnoreWhitespace = false;
   inlineDiffRows: InlineDiffRow[] = [];
   inlineDiffHunks: InlineDiffHunk[] = [];
@@ -115,169 +124,176 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   diffAddedLines = 0;
   diffRemovedLines = 0;
 
-  private resizeObserver: ResizeObserver | null = null;
   private inlineAiSub?: Subscription;
-  private syntaxRafId = 0;
-  private _cachedLineCount = 0;
-  private _cachedLineNumberList: number[] = [];
-  private _cachedContent: string = '';
-  private lastHighlightQuery: string = '';
-  private lastHighlightCount: number = 0;
+
+  private static readonly editorTheme = EditorView.theme({
+    '&': { fontSize: 'var(--editor-font-size)', fontFamily: 'var(--font-mono)' },
+    '&.cm-focused': { outline: 'none' },
+    '.cm-content': {
+      lineHeight: 'var(--editor-line-height)',
+      caretColor: 'var(--text-primary)',
+      padding: '16px 0',
+      fontFamily: 'var(--font-mono)',
+    },
+    '.cm-line': { padding: '0 16px' },
+    '.cm-gutters': {
+      background: 'var(--bg-secondary, var(--bg-primary))',
+      color: 'var(--text-tertiary)',
+      border: 'none',
+      paddingLeft: '8px',
+    },
+    '.cm-gutter.cm-lineNumbers .cm-gutterElement': {
+      padding: '0 8px 0 0',
+      minWidth: '32px',
+      fontSize: '12px',
+      fontFamily: 'var(--font-mono)',
+    },
+    '.cm-activeLine': { background: 'var(--hover-bg)' },
+    '.cm-activeLineGutter': { background: 'var(--hover-bg)' },
+    '.cm-cursor': { borderLeftColor: 'var(--text-primary)' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+      background: 'rgba(100, 148, 237, 0.35) !important',
+    },
+    '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--font-mono)' },
+  });
+
+  private static readonly markdownHighlightStyle = syntaxHighlighting(
+    HighlightStyle.define([
+      { tag: tags.heading1, color: 'var(--syn-heading)', fontWeight: 'bold', fontSize: '1.4em' },
+      { tag: tags.heading2, color: 'var(--syn-heading)', fontWeight: 'bold', fontSize: '1.25em' },
+      { tag: tags.heading3, color: 'var(--syn-heading)', fontWeight: 'bold', fontSize: '1.1em' },
+      { tag: [tags.heading4, tags.heading5, tags.heading6], color: 'var(--syn-heading)', fontWeight: 'bold' },
+      { tag: tags.quote, color: 'var(--syn-quote)', fontStyle: 'italic' },
+      { tag: tags.link, color: 'var(--syn-link)', textDecoration: 'underline' },
+      { tag: tags.url, color: 'var(--syn-url)' },
+      { tag: [tags.monospace, tags.character], color: 'var(--syn-code)', background: 'rgba(127,127,127,0.1)', borderRadius: '2px' },
+      { tag: tags.emphasis, fontStyle: 'italic' },
+      { tag: tags.strong, fontWeight: 'bold' },
+      { tag: tags.strikethrough, textDecoration: 'line-through' },
+      { tag: [tags.processingInstruction, tags.punctuation], color: 'var(--syn-punct)' },
+      { tag: tags.content, color: 'var(--text-primary)' },
+    ])
+  );
 
   constructor(
     private aiService: AiService,
-    private aiSettingsService: AiSettingsService
+    private aiSettingsService: AiSettingsService,
+    private ngZone: NgZone
   ) {}
 
-  get lineNumberList(): number[] {
-    if (this.content !== this._cachedContent) {
-      this._cachedContent = this.content;
-      const count = (this.content || '').split('\n').length;
-      if (count !== this._cachedLineCount) {
-        this._cachedLineCount = count;
-        this._cachedLineNumberList = Array.from({ length: count }, (_, i) => i + 1);
-      }
-    }
-    return this._cachedLineNumberList;
-  }
-
-  trackByNumber(_: number, n: number): number { return n; }
-
   ngAfterViewInit() {
-    if (this.editorElement && this.highlightBackdrop) {
-      this.editorElement.nativeElement.addEventListener('scroll', () => {
-        this.syncScroll();
-        if (this.lineNumbersEl) {
-          this.lineNumbersEl.nativeElement.scrollTop = this.editorElement.nativeElement.scrollTop;
-        }
-        // Re-highlight for new viewport range on scroll
-        this.scheduleSyntaxUpdate();
+    // Initialize CodeMirror 6
+    if (this.cmHost) {
+      this.editorView = new EditorView({
+        state: EditorState.create({
+          doc: this.content,
+          extensions: [
+            cmLineNumbers(),
+            history(),
+            drawSelection(),
+            highlightActiveLine(),
+            search({ top: true }),
+            markdown({ base: markdownLanguage, codeLanguages: languages }),
+            MarkdownEditorComponent.markdownHighlightStyle,
+            keymap.of([
+              ...defaultKeymap,
+              ...historyKeymap,
+              { key: 'Mod-b', run: () => { this.fmtBold(); return true; } },
+              { key: 'Mod-i', run: () => { this.fmtItalic(); return true; } },
+              { key: 'Mod-k', run: () => { this.fmtLink(); return true; } },
+              { key: 'Mod-`', run: () => { this.fmtInlineCode(); return true; } },
+              { key: 'Mod-Shift-a', run: () => { if (!this.readOnly) this.triggerInlineAi(); return true; } },
+              { key: 'Escape', run: () => { if (this.inlineAi.visible) { this.discardInline(); return true; } return false; } },
+            ]),
+            this.readOnlyCompartment.of(EditorState.readOnly.of(this.readOnly || this.inlineAi.visible)),
+            this.spellcheckCompartment.of(
+              EditorView.contentAttributes.of({ spellcheck: this.spellcheckEnabled ? 'true' : 'false' })
+            ),
+            EditorView.updateListener.of((update: ViewUpdate) => {
+              if (update.docChanged && !this.internalUpdate) {
+                this.ngZone.run(() => {
+                  this.internalUpdate = true;
+                  this.content = update.state.doc.toString();
+                  this.contentChange.emit(this.content);
+                  this.internalUpdate = false;
+                });
+              }
+            }),
+            MarkdownEditorComponent.editorTheme,
+            EditorView.lineWrapping,
+          ]
+        }),
+        parent: this.cmHost.nativeElement
       });
-
-      // Match the backdrop width to the textarea's content width (excludes scrollbar)
-      // whenever the textarea resizes (window resize, split-pane drag, etc.).
-      this.resizeObserver = new ResizeObserver(() => this.syncBackdropWidth());
-      this.resizeObserver.observe(this.editorElement.nativeElement);
-
-      // After fonts load, copy the textarea's computed text properties to the
-      // backdrop so there's zero sub-pixel drift between <textarea> and <div>.
-      document.fonts.ready.then(() => {
-        this.syncBackdropStyles();
-        this.syncBackdropWidth();
-      });
-
-      this.updateSyntaxBackdrop();
     }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['content'] && this.editorView && !this.internalUpdate) {
+      const current = this.editorView.state.doc.toString();
+      if (this.content !== current) {
+        this.internalUpdate = true;
+        this.editorView.dispatch({
+          changes: { from: 0, to: current.length, insert: this.content }
+        });
+        this.internalUpdate = false;
+      }
+    }
+    if (changes['readOnly'] && this.editorView) {
+      this.setEditorReadOnly(this.readOnly || this.inlineAi.visible);
+    }
+
     if (changes['content']) {
-      const changedExternally =
+      if (
         !changes['content'].firstChange &&
         changes['content'].previousValue !== changes['content'].currentValue &&
-        !this.internalContentUpdate;
-
-      if (changedExternally && this.inlineAi.visible) {
+        this.inlineAi.visible
+      ) {
         this.discardInline();
       }
-
-      this.internalContentUpdate = false;
-      this.scheduleSyntaxUpdate();
     }
   }
 
   ngOnDestroy() {
-    this.resizeObserver?.disconnect();
+    this.editorView?.destroy();
     this.inlineAiSub?.unsubscribe();
-    if (this.syntaxRafId) cancelAnimationFrame(this.syntaxRafId);
   }
 
-  // ── Scroll / layout sync ─────────────────────────────────────
-
-  /** Move the backdrop and search overlay via CSS transform so they stay aligned with the textarea. */
-  private syncScroll() {
-    if (!this.editorElement || !this.highlightBackdrop) return;
-    const ta = this.editorElement.nativeElement;
-    const t = `translateY(${-ta.scrollTop}px)`;
-    this.highlightBackdrop.nativeElement.style.transform = t;
-    if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.style.transform = t;
+  // ── CM6 Compatibility Bridge ─────────────────────────────
+  /** Lock or unlock the editor by reconfiguring the readonly compartment. */
+  private setEditorReadOnly(readOnly: boolean): void {
+    this.editorView?.dispatch({
+      effects: this.readOnlyCompartment.reconfigure(
+        EditorState.readOnly.of(readOnly)
+      )
+    });
   }
 
-  /** Set the backdrop and search overlay width to the textarea's clientWidth (which excludes the scrollbar). */
-  private syncBackdropWidth() {
-    if (!this.editorElement || !this.highlightBackdrop) return;
-    const ta = this.editorElement.nativeElement;
-    const w = ta.clientWidth + 'px';
-    this.highlightBackdrop.nativeElement.style.width = w;
-    if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.style.width = w;
+  private getCmSelection(): { from: number; to: number } {
+    if (!this.editorView) return { from: 0, to: 0 };
+    const { from, to } = this.editorView.state.selection.main;
+    return { from, to };
   }
 
-  /** Copy computed text properties from the textarea to the backdrop and search overlay. */
-  private syncBackdropStyles() {
-    if (!this.editorElement || !this.highlightBackdrop) return;
-    const cs = window.getComputedStyle(this.editorElement.nativeElement);
-    for (const el of [this.highlightBackdrop.nativeElement, this.searchOverlayEl?.nativeElement]) {
-      if (!el) continue;
-      el.style.lineHeight   = cs.lineHeight;
-      el.style.fontFamily   = cs.fontFamily;
-      el.style.fontSize     = cs.fontSize;
-      el.style.paddingTop    = cs.paddingTop;
-      el.style.paddingRight  = cs.paddingRight;
-      el.style.paddingBottom = cs.paddingBottom;
-      el.style.paddingLeft   = cs.paddingLeft;
-    }
+  /** Apply a single precise range replacement via CM6, and set the resulting selection. */
+  private cmDispatchChange(from: number, to: number, insert: string, selAnchor: number, selHead?: number): void {
+    if (!this.editorView) return;
+    this.editorView.dispatch({
+      changes: { from, to, insert },
+      selection: EditorSelection.range(selAnchor, selHead ?? selAnchor)
+    });
   }
 
-  // ── Content ──────────────────────────────────────────────────
-
-  onContentChange(event: any) {
-    this.content = event.target.value;
-    this.internalContentUpdate = true;
-    this.contentChange.emit(this.content);
-    this.scheduleSyntaxUpdate();
-    // Invalidate search overlay cache since match positions may have shifted
-    this.lastHighlightQuery = '';
-    this.lastHighlightCount = 0;
-  }
-
-  onEditorKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && this.inlineAi.visible) {
-      event.preventDefault();
-      this.discardInline();
-      return;
-    }
-    const ctrl = event.ctrlKey || event.metaKey;
-    if (!ctrl) return;
-    switch (event.key) {
-      case 'b': event.preventDefault(); this.fmtBold();       return;
-      case 'i': event.preventDefault(); this.fmtItalic();     return;
-      case 'k': event.preventDefault(); this.fmtLink();       return;
-      case '`': event.preventDefault(); this.fmtInlineCode(); return;
-      case 'A':
-        if (event.shiftKey && !this.readOnly) { event.preventDefault(); this.triggerInlineAi(); }
-        return;
-    }
+  /** Apply multiple precise range replacements in one transaction (for multi-line operations). */
+  private cmDispatchChanges(changes: { from: number; to: number; insert: string }[], selAnchor: number, selHead?: number): void {
+    if (!this.editorView) return;
+    this.editorView.dispatch({
+      changes,
+      selection: EditorSelection.range(selAnchor, selHead ?? selAnchor)
+    });
   }
 
   // ── Formatting helpers ───────────────────────────────────────
-
-  /** Apply a new textarea value, restore cursor/selection, and emit to parent.
-   *  Uses execCommand('insertText') so the change lands on the native undo stack
-   *  and Ctrl+Z works as expected after any toolbar action. */
-  private applyFormat(newValue: string, selStart: number, selEnd: number) {
-    const ta = this.editorElement.nativeElement;
-    const scrollTop = ta.scrollTop;
-    ta.focus();
-    ta.select();
-    // execCommand is deprecated but remains fully supported in Chromium / Electron
-    // and is the only reliable way to push changes onto the textarea's undo stack.
-    document.execCommand('insertText', false, newValue);
-    ta.setSelectionRange(selStart, selEnd);
-    ta.scrollTop = scrollTop;
-    this.content = newValue;
-    this.internalContentUpdate = true;
-    this.contentChange.emit(newValue);
-  }
 
   /**
    * Wrap the current selection with `before` and `after` markers.
@@ -285,27 +301,30 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
    * If nothing is selected, insert empty markers with cursor placed inside.
    */
   private wrapSelection(before: string, after: string) {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s, to: e } = this.getCmSelection();
+    const v = this.content;
     const sel = v.substring(s, e);
     const bLen = before.length;
     const aLen = after.length;
 
     // Already wrapped — markers sit immediately outside the selection
     if (s >= bLen && v.substring(s - bLen, s) === before && v.substring(e, e + aLen) === after) {
-      const nv = v.substring(0, s - bLen) + sel + v.substring(e + aLen);
-      this.applyFormat(nv, s - bLen, e - bLen);
+      this.cmDispatchChanges([
+        { from: s - bLen, to: s, insert: '' },
+        { from: e, to: e + aLen, insert: '' }
+      ], s - bLen, e - bLen);
       return;
     }
 
     if (sel) {
-      const nv = v.substring(0, s) + before + sel + after + v.substring(e);
-      this.applyFormat(nv, s + bLen, e + bLen);
+      this.cmDispatchChanges([
+        { from: s, to: e, insert: before + sel + after }
+      ], s + bLen, s + bLen + sel.length);
     } else {
-      const nv = v.substring(0, s) + before + after + v.substring(s);
-      this.applyFormat(nv, s + bLen, s + bLen);
+      this.cmDispatchChanges([
+        { from: s, to: s, insert: before + after }
+      ], s + bLen);
     }
   }
 
@@ -314,10 +333,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
    * Removes if all covered lines already start with the prefix; adds otherwise.
    */
   private toggleLinePrefix(prefix: string) {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s, to: e } = this.getCmSelection();
+    const v = this.content;
 
     const lineStart = v.lastIndexOf('\n', s - 1) + 1;
     // If selection ends exactly at the start of a new line, exclude that line
@@ -328,26 +346,31 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     const lines = chunk.split('\n');
     const allHave = lines.every(l => l.startsWith(prefix));
 
+    // Build per-line changes, tracking each line's absolute start offset.
+    const lineOffsets: number[] = [];
+    { let pos = lineStart; for (const l of lines) { lineOffsets.push(pos); pos += l.length + 1; } }
+
     if (allHave) {
+      const changes = lines.map((l, i) => ({ from: lineOffsets[i], to: lineOffsets[i] + prefix.length, insert: '' }));
       const newChunk = lines.map(l => l.substring(prefix.length)).join('\n');
       const removed = chunk.length - newChunk.length;
-      const nv = v.substring(0, lineStart) + newChunk + v.substring(lineEnd);
-      this.applyFormat(nv, Math.max(lineStart, s - prefix.length), Math.max(lineStart, e - removed));
+      this.cmDispatchChanges(changes, Math.max(lineStart, s - prefix.length), Math.max(lineStart, e - removed));
     } else {
+      const changes = lines
+        .map((l, i) => l.startsWith(prefix) ? null : { from: lineOffsets[i], to: lineOffsets[i], insert: prefix })
+        .filter((c): c is { from: number; to: number; insert: string } => c !== null);
       const newChunk = lines.map(l => l.startsWith(prefix) ? l : prefix + l).join('\n');
       const added = newChunk.length - chunk.length;
-      const nv = v.substring(0, lineStart) + newChunk + v.substring(lineEnd);
       const firstLineGain = lines[0].startsWith(prefix) ? 0 : prefix.length;
-      this.applyFormat(nv, s + firstLineGain, e + added);
+      this.cmDispatchChanges(changes, s + firstLineGain, e + added);
     }
   }
 
   /** Numbered-list variant of toggleLinePrefix (handles variable-width numbers). */
   private toggleOrderedList() {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s, to: e } = this.getCmSelection();
+    const v = this.content;
 
     const lineStart = v.lastIndexOf('\n', s - 1) + 1;
     const adjustedEnd = e > s && v[e - 1] === '\n' ? e - 1 : e;
@@ -357,18 +380,26 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     const lines = chunk.split('\n');
     const allOrdered = lines.every(l => /^\d+\.\s/.test(l));
 
+    const lineOffsets: number[] = [];
+    { let pos = lineStart; for (const l of lines) { lineOffsets.push(pos); pos += l.length + 1; } }
+
     if (allOrdered) {
+      const changes = lines.map((l, i) => {
+        const pfxLen = (l.match(/^\d+\.\s/) || [''])[0].length;
+        return { from: lineOffsets[i], to: lineOffsets[i] + pfxLen, insert: '' };
+      });
       const newChunk = lines.map(l => l.replace(/^\d+\.\s/, '')).join('\n');
       const removed = chunk.length - newChunk.length;
       const firstPfxLen = (lines[0].match(/^\d+\.\s/) || [''])[0].length;
-      const nv = v.substring(0, lineStart) + newChunk + v.substring(lineEnd);
-      this.applyFormat(nv, Math.max(lineStart, s - firstPfxLen), Math.max(lineStart, e - removed));
+      this.cmDispatchChanges(changes, Math.max(lineStart, s - firstPfxLen), Math.max(lineStart, e - removed));
     } else {
+      const changes = lines
+        .map((l, i) => /^\d+\.\s/.test(l) ? null : { from: lineOffsets[i], to: lineOffsets[i], insert: `${i + 1}. ` })
+        .filter((c): c is { from: number; to: number; insert: string } => c !== null);
       const newChunk = lines.map((l, i) => /^\d+\.\s/.test(l) ? l : `${i + 1}. ${l}`).join('\n');
       const added = newChunk.length - chunk.length;
       const firstLineGain = /^\d+\.\s/.test(lines[0]) ? 0 : `${1}. `.length;
-      const nv = v.substring(0, lineStart) + newChunk + v.substring(lineEnd);
-      this.applyFormat(nv, s + firstLineGain, e + added);
+      this.cmDispatchChanges(changes, s + firstLineGain, e + added);
     }
   }
 
@@ -380,10 +411,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   fmtInlineCode() { this.wrapSelection('`', '`'); }
 
   fmtHeading(level: number) {
+    if (!this.editorView) return;
     const prefix = '#'.repeat(level) + ' ';
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const v = ta.value;
+    const { from: s } = this.getCmSelection();
+    const v = this.content;
     const lineStart = v.lastIndexOf('\n', s - 1) + 1;
     const rawEnd = v.indexOf('\n', s);
     const lineEnd = rawEnd === -1 ? v.length : rawEnd;
@@ -393,21 +424,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     if (m) {
       if (m[1] === '#'.repeat(level)) {
         // Same level → remove heading
-        const newLine = line.substring(m[0].length);
-        const nv = v.substring(0, lineStart) + newLine + v.substring(lineEnd);
         const nc = Math.max(lineStart, s - m[0].length);
-        this.applyFormat(nv, nc, nc);
+        this.cmDispatchChange(lineStart, lineStart + m[0].length, '', nc);
       } else {
         // Different level → replace
-        const newLine = prefix + line.substring(m[0].length);
-        const nv = v.substring(0, lineStart) + newLine + v.substring(lineEnd);
         const nc = s + (prefix.length - m[0].length);
-        this.applyFormat(nv, nc, nc);
+        this.cmDispatchChange(lineStart, lineStart + m[0].length, prefix, nc);
       }
     } else {
-      const nv = v.substring(0, lineStart) + prefix + line + v.substring(lineEnd);
       const nc = s + prefix.length;
-      this.applyFormat(nv, nc, nc);
+      this.cmDispatchChange(lineStart, lineStart, prefix, nc);
     }
   }
 
@@ -417,56 +443,49 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
   fmtTaskList()      { this.toggleLinePrefix('- [ ] '); }
 
   fmtCodeBlock() {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s, to: e } = this.getCmSelection();
+    const v = this.content;
     const sel = v.substring(s, e);
     const insert = '```\n' + (sel || '') + '\n```';
-    const nv = v.substring(0, s) + insert + v.substring(e);
     // Place cursor right after the opening ``` so the language can be typed
-    this.applyFormat(nv, s + 3, s + 3);
+    this.cmDispatchChange(s, e, insert, s + 3);
   }
 
   fmtHR() {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s } = this.getCmSelection();
+    const v = this.content;
     const lineStart = v.lastIndexOf('\n', s - 1) + 1;
     const pre = lineStart > 0 ? '\n---\n\n' : '---\n\n';
-    const nv = v.substring(0, lineStart) + pre + v.substring(lineStart);
     const nc = lineStart + pre.length;
-    this.applyFormat(nv, nc, nc);
+    this.cmDispatchChange(lineStart, lineStart, pre, nc);
   }
 
   fmtLink() {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s, to: e } = this.getCmSelection();
+    const v = this.content;
     const text = v.substring(s, e) || 'link text';
     const insert = `[${text}](url)`;
-    const nv = v.substring(0, s) + insert + v.substring(e);
     const urlStart = s + 1 + text.length + 2; // after [text](
-    this.applyFormat(nv, urlStart, urlStart + 3); // select "url"
+    this.cmDispatchChange(s, e, insert, urlStart, urlStart + 3); // select "url"
   }
 
   fmtImage() {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s, to: e } = this.getCmSelection();
+    const v = this.content;
     const alt = v.substring(s, e) || 'alt text';
     const insert = `![${alt}](url)`;
-    const nv = v.substring(0, s) + insert + v.substring(e);
     const urlStart = s + 2 + alt.length + 2; // after ![alt](
-    this.applyFormat(nv, urlStart, urlStart + 3); // select "url"
+    this.cmDispatchChange(s, e, insert, urlStart, urlStart + 3); // select "url"
   }
 
   fmtTable() {
-    const ta = this.editorElement.nativeElement;
-    const s = ta.selectionStart;
-    const v = ta.value;
+    if (!this.editorView) return;
+    const { from: s } = this.getCmSelection();
+    const v = this.content;
     const lineStart = v.lastIndexOf('\n', s - 1) + 1;
     const pre = s > lineStart ? '\n' : '';
     const table =
@@ -475,21 +494,18 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
       '| Cell | Cell | Cell |\n' +
       '| Cell | Cell | Cell |';
     const insert = pre + table + '\n';
-    const nv = v.substring(0, s) + insert + v.substring(s);
     // Select "Header 1" so the user can start typing immediately
     const h1Start = s + pre.length + 2;
-    this.applyFormat(nv, h1Start, h1Start + 8);
+    this.cmDispatchChange(s, s, insert, h1Start, h1Start + 8);
   }
 
   // ── Inline AI ─────────────────────────────────────────────────
 
   triggerInlineAi(): void {
-    const ta = this.editorElement?.nativeElement;
-    if (!ta) return;
+    if (!this.editorView) return;
     this.inlineAiSub?.unsubscribe();
     this.inlineAiSub = undefined;
-    const rawSelStart = ta.selectionStart;
-    const rawSelEnd   = ta.selectionEnd;
+    const { from: rawSelStart, to: rawSelEnd } = this.getCmSelection();
     const hasUserSelection = rawSelStart !== rawSelEnd;
     const scope: InlineAiScope = hasUserSelection ? 'selection' : 'document';
     this.inlineAi = {
@@ -511,6 +527,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     };
     this.applyInlineScopeTarget();
     this.historyIndex = -1;
+    this.setEditorReadOnly(true);
     setTimeout(() => this.inlineAiInputRef?.nativeElement.focus(), 0);
   }
 
@@ -749,9 +766,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
       return;
     }
     const { selStart, selEnd } = this.inlineAi;
-    const newValue = this.content.substring(0, selStart) + text + this.content.substring(selEnd);
-    const cursorEnd = selStart + text.length;
-    this.applyFormat(newValue, cursorEnd, cursorEnd);
+    this.cmDispatchChange(selStart, selEnd, text, selStart + text.length);
     this.discardInline();
   }
 
@@ -777,7 +792,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
       error: '',
     };
     this.resetInlineDiffState();
-    setTimeout(() => this.editorElement?.nativeElement.focus(), 0);
+    this.setEditorReadOnly(this.readOnly);
+    setTimeout(() => this.editorView?.focus(), 0);
   }
 
   stopInline(): void {
@@ -881,9 +897,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     const text = this.getAcceptedOnlyPreviewText();
     if (text === null) return;
     const { selStart, selEnd } = this.inlineAi;
-    const newValue = this.content.substring(0, selStart) + text + this.content.substring(selEnd);
-    const cursorEnd = selStart + text.length;
-    this.applyFormat(newValue, cursorEnd, cursorEnd);
+    this.cmDispatchChange(selStart, selEnd, text, selStart + text.length);
     this.discardInline();
   }
 
@@ -1279,46 +1293,84 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
   // ── Search highlighting (public API for parent) ──────────────
 
-  highlightSearchResults(query: string, results: any[], currentIndex: number) {
-    if (!query || !results.length) {
-      this.clearHighlights();
+  highlightSearchResults(
+    query: string,
+    results: { start: number; end: number }[],
+    currentIndex: number,
+    searchOptions?: SearchOptions
+  ): void {
+    if (!this.editorView || !query) {
+      this.clearSearchHighlights();
       return;
     }
 
-    this.updateBackdropHighlights(query, results, currentIndex);
+    const cmQuery = new SearchQuery({
+      search: query,
+      caseSensitive: searchOptions?.caseSensitive ?? false,
+      regexp: searchOptions?.useRegex ?? false,
+      wholeWord: searchOptions?.wholeWord ?? false,
+      // Disable CM6's default \n/\r/\t escape-sequence expansion for plain-text
+      // queries so matching stays identical to SearchService's literal matching.
+      literal: true,
+    });
 
-    if (currentIndex > 0 && currentIndex <= results.length && results[currentIndex - 1]) {
-      this.scrollToResult(results[currentIndex - 1]);
+    this.editorView.dispatch({
+      effects: setSearchQuery.of(cmQuery)
+    });
+
+    // Move the CM6 selection to the current match so CM6's own "selected match"
+    // decoration highlights it distinctly, and scroll it into view.
+    const current = results[currentIndex - 1];
+    if (current) {
+      const docLength = this.editorView.state.doc.length;
+      const from = Math.max(0, Math.min(current.start, docLength));
+      const to = Math.max(from, Math.min(current.end, docLength));
+      this.editorView.dispatch({
+        selection: { anchor: from, head: to },
+        effects: EditorView.scrollIntoView(from, { y: 'center' }),
+      });
     }
+  }
+
+  clearSearchHighlights(): void {
+    if (!this.editorView) return;
+    this.editorView.dispatch({
+      effects: setSearchQuery.of(new SearchQuery({ search: '' }))
+    });
+  }
+
+  closeSearch(): void {
+    this.clearSearchHighlights();
+    this.editorView?.focus();
   }
 
   scrollToTop() {
-    if (this.editorElement) {
-      this.editorElement.nativeElement.scrollTop = 0;
-      this.editorElement.nativeElement.setSelectionRange(0, 0);
-    }
-    if (this.lineNumbersEl) {
-      this.lineNumbersEl.nativeElement.scrollTop = 0;
+    if (this.editorView) {
+      this.editorView.dispatch({
+        selection: EditorSelection.cursor(0),
+        effects: EditorView.scrollIntoView(0, { y: 'start' })
+      });
     }
   }
 
-  /** Re-sync backdrop text properties after an external CSS change (e.g. font-size). */
+  /** Current vertical scroll position as a 0-1 fraction of the scrollable range. */
+  getScrollFraction(): number | null {
+    if (!this.editorView) return null;
+    const el = this.editorView.scrollDOM;
+    const max = Math.max(1, el.scrollHeight - el.clientHeight);
+    return el.scrollTop / max;
+  }
+
+  /** Restore vertical scroll position from a 0-1 fraction. */
+  setScrollFraction(frac: number): void {
+    if (!this.editorView) return;
+    const el = this.editorView.scrollDOM;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTop = frac * max;
+  }
+
   refreshBackdropStyles() {
-    this.syncBackdropStyles();
-    this.syncBackdropWidth();
-  }
-
-  /** Clear highlights without stealing focus. */
-  clearSearchHighlights() {
-    this.clearHighlights();
-  }
-
-  /** Clear highlights and return focus to the editor. */
-  closeSearch() {
-    this.clearHighlights();
-    if (this.editorElement) {
-      this.editorElement.nativeElement.focus();
-    }
+    this.editorView?.requestMeasure();
   }
 
   // ── Cheat Sheet ──────────────────────────────────────────────
@@ -1329,6 +1381,11 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
 
   toggleSpellcheck() {
     this.spellcheckEnabled = !this.spellcheckEnabled;
+    this.editorView?.dispatch({
+      effects: this.spellcheckCompartment.reconfigure(
+        EditorView.contentAttributes.of({ spellcheck: this.spellcheckEnabled ? 'true' : 'false' })
+      )
+    });
   }
 
   @HostListener('document:mousedown', ['$event'])
@@ -1342,369 +1399,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnChanges, OnDest
     }
   }
 
-  // ── Private helpers ──────────────────────────────────────────
-
-  private updateBackdropHighlights(query: string, results: any[], currentIndex: number) {
-    if (!this.searchOverlayEl || !this.editorElement) return;
-
-    const overlay = this.searchOverlayEl.nativeElement;
-
-    if (!query || results.length === 0) {
-      overlay.innerHTML = '';
-      this.lastHighlightQuery = '';
-      this.lastHighlightCount = 0;
-      return;
-    }
-
-    // If query and result count haven't changed, just move the .current marker
-    // instead of rebuilding the entire overlay HTML (avoids expensive innerHTML).
-    if (query === this.lastHighlightQuery && results.length === this.lastHighlightCount) {
-      this.updateCurrentOverlayMarker(overlay, currentIndex);
-      return;
-    }
-
-    this.lastHighlightQuery = query;
-    this.lastHighlightCount = results.length;
-
-    // Build the overlay HTML: the full content as transparent text with
-    // search-highlight spans carrying only the yellow background.
-    // Text color is transparent (set in CSS) so only the background shows,
-    // leaving the syntax-colored backdrop fully visible underneath.
-    const sortedMatches = [...results].sort((a, b) => a.start - b.start);
-    let html = '';
-    let lastEnd = 0;
-
-    for (let i = 0; i < sortedMatches.length; i++) {
-      const match = sortedMatches[i];
-      const isCurrent = (i + 1) === currentIndex;
-
-      html += this.escapeHtml(this.content.substring(lastEnd, match.start));
-
-      const cls = isCurrent ? 'search-highlight current' : 'search-highlight';
-      html += `<span class="${cls}">${this.escapeHtml(this.content.substring(match.start, match.end))}</span>`;
-
-      lastEnd = match.end;
-    }
-
-    html += this.escapeHtml(this.content.substring(lastEnd));
-
-    overlay.innerHTML = html;
-    this.syncBackdropWidth();
-    this.syncScroll();
-  }
-
-  private updateCurrentOverlayMarker(overlay: HTMLElement, currentIndex: number) {
-    const oldCurrent = overlay.querySelector('.search-highlight.current');
-    if (oldCurrent) oldCurrent.classList.remove('current');
-
-    const highlights = overlay.querySelectorAll('.search-highlight');
-    if (currentIndex > 0 && currentIndex <= highlights.length) {
-      highlights[currentIndex - 1].classList.add('current');
-    }
-  }
-
-  private scrollToResult(result: any) {
-    if (!this.editorElement) return;
-
-    const textarea = this.editorElement.nativeElement;
-    textarea.setSelectionRange(result.start, result.end);
-
-    // Use the proportion of the match position within the total text to
-    // derive the scroll target.  This handles line wrapping correctly
-    // (the old lineNumber * lineHeight formula broke in split mode).
-    const totalLines = (textarea.value.match(/\n/g) || []).length + 1;
-    const lineNumber = (textarea.value.substring(0, result.start).match(/\n/g) || []).length;
-    const lineRatio = lineNumber / Math.max(1, totalLines);
-    const maxScroll = textarea.scrollHeight - textarea.clientHeight;
-    const targetScrollTop = lineRatio * maxScroll - textarea.clientHeight / 3;
-
-    textarea.scrollTo({
-      top: Math.max(0, Math.min(maxScroll, targetScrollTop)),
-      behavior: 'smooth'
-    });
-  }
-
-  private clearHighlights() {
-    if (this.searchOverlayEl) this.searchOverlayEl.nativeElement.innerHTML = '';
-    this.lastHighlightQuery = '';
-    this.lastHighlightCount = 0;
-  }
+  // ── Private helpers ─────────────────────────────────────────
 
   private escapeHtml(text: string): string {
     return text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-  }
-
-  // ── Syntax highlighting ───────────────────────────────────────
-
-  private scheduleSyntaxUpdate(): void {
-    if (this.syntaxRafId) cancelAnimationFrame(this.syntaxRafId);
-    this.syntaxRafId = requestAnimationFrame(() => {
-      this.syntaxRafId = 0;
-      this.updateSyntaxBackdrop();
-    });
-  }
-
-  private updateSyntaxBackdrop(): void {
-    if (!this.highlightBackdrop) return;
-    const html = this.syntaxHighlight(this.content || '');
-    this.highlightBackdrop.nativeElement.innerHTML = html;
-    this.syncBackdropWidth();
-    this.syncScroll();
-  }
-
-  /**
-   * Returns the [firstVisible, lastVisible] line range currently shown in the
-   * textarea viewport, plus a buffer of VIEWPORT_BUFFER lines on each side.
-   */
-  private static readonly VIEWPORT_BUFFER = 30;
-
-  private getVisibleLineRange(totalLines: number): [number, number] {
-    if (!this.editorElement) return [0, totalLines - 1];
-    const ta = this.editorElement.nativeElement;
-
-    // Use percentage-based calculation against actual scrollHeight so that
-    // line wrapping (white-space: pre-wrap) is handled correctly.  The old
-    // `scrollTop / lineHeight` formula counted *visual* lines, not content
-    // lines, which broke syntax highlighting in split mode where the narrower
-    // pane causes heavy wrapping.
-    const maxScroll = ta.scrollHeight - ta.clientHeight;
-    if (maxScroll <= 0) return [0, totalLines - 1]; // all content fits
-
-    const scrollRatio = ta.scrollTop / maxScroll;
-    const viewRatio = ta.clientHeight / Math.max(1, ta.scrollHeight);
-    const visibleCount = Math.ceil(viewRatio * totalLines);
-    const firstVisible = Math.floor(scrollRatio * (totalLines - visibleCount));
-    const lastVisible = firstVisible + visibleCount;
-
-    const buf = MarkdownEditorComponent.VIEWPORT_BUFFER;
-    return [
-      Math.max(0, firstVisible - buf),
-      Math.min(totalLines - 1, lastVisible + buf)
-    ];
-  }
-
-  private syntaxHighlight(text: string): string {
-    const lines = text.replace(/\r/g, '').split('\n');
-    const [vpStart, vpEnd] = this.getVisibleLineRange(lines.length);
-    const out: string[] = [];
-    let inFence = false;
-    let fenceLang = '';
-    let fenceBuffer: string[] = [];
-    let fenceStartIdx = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
-      const esc = this.escapeHtml(raw);
-
-      // Fenced code block fence line (``` or ~~~)
-      if (/^(`{3,}|~{3,})/.test(raw)) {
-        if (!inFence) {
-          inFence = true;
-          fenceLang = raw.replace(/^[`~]+/, '').trim().split(/\s/)[0] || '';
-          fenceBuffer = [];
-          fenceStartIdx = i + 1;
-        } else {
-          // Closing fence — flush the buffered code block
-          this.flushCodeBlock(out, fenceBuffer, fenceLang, fenceStartIdx, vpStart, vpEnd);
-          inFence = false;
-          fenceLang = '';
-          fenceBuffer = [];
-        }
-        if (i >= vpStart && i <= vpEnd) {
-          out.push(`<span class="syn-fence">${esc}</span>`);
-        } else {
-          out.push(esc);
-        }
-        continue;
-      }
-
-      // Inside fenced code block — buffer the line
-      if (inFence) {
-        fenceBuffer.push(raw);
-        continue;
-      }
-
-      // Off-viewport lines: skip expensive regex work, emit plain escaped text
-      if (i < vpStart || i > vpEnd) {
-        out.push(esc);
-        continue;
-      }
-
-      // Headings (# through ######)
-      const hm = raw.match(/^(#{1,6})([ \t]|$)/);
-      if (hm) {
-        const level = hm[1].length;
-        out.push(`<span class="syn-h${level}"><span class="syn-marker">${this.escapeHtml(hm[1])}</span>${this.inlineHighlight(raw.slice(hm[1].length))}</span>`);
-        continue;
-      }
-
-      // Horizontal rule (---, ***, ___ with optional spaces)
-      if (/^[ \t]{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(raw) && raw.trim().length >= 3) {
-        out.push(`<span class="syn-hr">${esc}</span>`);
-        continue;
-      }
-
-      // Blockquote
-      if (/^>/.test(raw)) {
-        const markerMatch = raw.match(/^(>+[ \t]?)/);
-        const marker = markerMatch ? markerMatch[1] : '>';
-        const rest = raw.slice(marker.length);
-        out.push(`<span class="syn-bq-marker">${this.escapeHtml(marker)}</span><span class="syn-blockquote">${this.inlineHighlight(rest)}</span>`);
-        continue;
-      }
-
-      // Task list item (must come before unordered list)
-      const taskM = raw.match(/^([ \t]*)([-*+][ \t])(\[[ xX]\])([ \t]?)(.*)/);
-      if (taskM) {
-        const [, indent, bullet, checkbox, sp, rest] = taskM;
-        out.push(
-          this.escapeHtml(indent) +
-          `<span class="syn-list-marker">${this.escapeHtml(bullet)}</span>` +
-          `<span class="syn-punct">${this.escapeHtml(checkbox)}</span>` +
-          this.escapeHtml(sp) +
-          this.inlineHighlight(rest)
-        );
-        continue;
-      }
-
-      // Unordered list item
-      const ulM = raw.match(/^([ \t]*)([-*+])([ \t])(.*)/);
-      if (ulM) {
-        const [, indent, bullet, sp, rest] = ulM;
-        out.push(
-          this.escapeHtml(indent) +
-          `<span class="syn-list-marker">${this.escapeHtml(bullet + sp)}</span>` +
-          this.inlineHighlight(rest)
-        );
-        continue;
-      }
-
-      // Ordered list item
-      const olM = raw.match(/^([ \t]*)(\d+\.)([ \t])(.*)/);
-      if (olM) {
-        const [, indent, num, sp, rest] = olM;
-        out.push(
-          this.escapeHtml(indent) +
-          `<span class="syn-list-marker">${this.escapeHtml(num + sp)}</span>` +
-          this.inlineHighlight(rest)
-        );
-        continue;
-      }
-
-      // Normal line
-      out.push(this.inlineHighlight(raw));
-    }
-
-    // Unclosed fence at end of file — flush remaining buffered lines
-    if (inFence && fenceBuffer.length > 0) {
-      this.flushCodeBlock(out, fenceBuffer, fenceLang, fenceStartIdx, vpStart, vpEnd);
-    }
-
-    return out.join('\n');
-  }
-
-  /**
-   * Highlight a buffered fenced code block with highlight.js and push
-   * the result lines into the output array.
-   */
-  private flushCodeBlock(
-    out: string[], buffer: string[], lang: string,
-    startIdx: number, vpStart: number, vpEnd: number
-  ): void {
-    // Check if any part of the block is visible
-    const endIdx = startIdx + buffer.length - 1;
-    const anyVisible = endIdx >= vpStart && startIdx <= vpEnd;
-
-    if (!anyVisible || buffer.length === 0) {
-      // Off-viewport — emit plain escaped lines
-      for (const line of buffer) {
-        out.push(this.escapeHtml(line));
-      }
-      return;
-    }
-
-    // Run highlight.js on the whole block
-    const code = buffer.join('\n');
-    let highlighted: string;
-    try {
-      if (lang && hljs.getLanguage(lang)) {
-        highlighted = hljs.highlight(code, { language: lang }).value;
-      } else {
-        highlighted = hljs.highlightAuto(code).value;
-      }
-    } catch (_) {
-      highlighted = this.escapeHtml(code);
-    }
-
-    // Split back into lines and wrap each in a code-line span
-    const hljsLines = highlighted.split('\n');
-    for (let j = 0; j < hljsLines.length; j++) {
-      const lineIdx = startIdx + j;
-      if (lineIdx >= vpStart && lineIdx <= vpEnd) {
-        out.push(`<span class="syn-code-line">${hljsLines[j]}</span>`);
-      } else {
-        out.push(this.escapeHtml(buffer[j] ?? ''));
-      }
-    }
-  }
-
-  private inlineHighlight(raw: string): string {
-    // Step 1: extract inline code so its content is never re-processed
-    const codes: string[] = [];
-    let s = raw.replace(/`([^`\n]+)`/g, (_m, inner) => {
-      codes.push(inner);
-      return `\uE000${codes.length - 1}\uE001`;
-    });
-
-    // Step 2: HTML-escape the remaining text (placeholders survive untouched)
-    s = this.escapeHtml(s);
-
-    // Step 3: images before links to prevent `![` being matched as a link
-    s = s.replace(/!\[([^\]\n]*)\]\(([^)\n]*)\)/g,
-      (_m, alt, url) =>
-        `<span class="syn-punct">![</span><span class="syn-link-text">${alt}</span><span class="syn-punct">](</span><span class="syn-url">${url}</span><span class="syn-punct">)</span>`
-    );
-
-    s = s.replace(/\[([^\]\n]*)\]\(([^)\n]*)\)/g,
-      (_m, text, url) =>
-        `<span class="syn-punct">[</span><span class="syn-link-text">${text}</span><span class="syn-punct">](</span><span class="syn-url">${url}</span><span class="syn-punct">)</span>`
-    );
-
-    // Strikethrough (~~…~~)
-    s = s.replace(/~~(.+?)~~/g,
-      (_m, inner) =>
-        `<span class="syn-marker">~~</span><span class="syn-strike">${inner}</span><span class="syn-marker">~~</span>`
-    );
-
-    // Bold (**…** then __…__)
-    s = s.replace(/\*\*(.+?)\*\*/g,
-      (_m, inner) =>
-        `<span class="syn-marker">\*\*</span><span class="syn-bold">${inner}</span><span class="syn-marker">\*\*</span>`
-    );
-    s = s.replace(/__([^_\n]+)__/g,
-      (_m, inner) =>
-        `<span class="syn-marker">__</span><span class="syn-bold">${inner}</span><span class="syn-marker">__</span>`
-    );
-
-    // Italic (*…* then _…_) — exclude content with * or span tags to avoid false matches
-    s = s.replace(/\*([^*\n<>]+)\*/g,
-      (_m, inner) =>
-        `<span class="syn-marker">\*</span><span class="syn-italic">${inner}</span><span class="syn-marker">\*</span>`
-    );
-    s = s.replace(/_([^_\n<>]+)_/g,
-      (_m, inner) =>
-        `<span class="syn-marker">_</span><span class="syn-italic">${inner}</span><span class="syn-marker">_</span>`
-    );
-
-    // Step 4: restore inline code
-    s = s.replace(/\uE000(\d+)\uE001/g,
-      (_m, idx) =>
-        `<span class="syn-inline-code">\`${this.escapeHtml(codes[+idx])}\`</span>`
-    );
-
-    return s;
   }
 }

@@ -284,6 +284,26 @@ app-markdown-preview {
       }
     }
 
+    // ── Mermaid diagrams ──────────────────────────────────────
+    pre.mermaid {
+      display: flex;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      padding: var(--space-4) 0;
+      margin: var(--space-4) 0;
+      overflow-x: auto;
+
+      svg { max-width: 100%; height: auto; }
+
+      .mermaid-error {
+        color: var(--danger, #e5484d);
+        font-family: var(--font-mono);
+        font-size: 0.85em;
+        white-space: pre-wrap;
+      }
+    }
+
     // ── Empty state ───────────────────────────────────────────
     .empty-preview {
       color: var(--text-tertiary);

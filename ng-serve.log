@@ -1,0 +1,6 @@
+ [1mPort 4200 is already in use.
+Would you like to use a different port?[22m [2m(Y/n)[22m[47G
+[?25h[1m[31mAn unhandled exception occurred: Port 4200 is already in use. Use '--port' to specify a different port.
+See "C:\Users\JUBIN~1.SAN\AppData\Local\Temp\ng-JHc9lE\angular-errors.log" for further details.[39m[22m
+
+C:\MyWorks\MarkdownEditor>

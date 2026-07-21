@@ -23,6 +23,7 @@ interface EditorTab {
   readOnly?: boolean;
   label?: string; // overrides display name when set
   externallyChanged?: boolean; // true when file was modified outside the app
+  scrollFraction?: number; // 0-1 scroll position, shared across view modes (edit/preview/split)
 }
 
 interface EditorGroup {
@@ -71,6 +72,50 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
   get previewContainer(): ElementRef | undefined {
     return this.activeGroupId === 'g1' ? this.previewLeftRef : this.previewRightRef;
+  }
+
+  /** Editor/preview pane components for a given group (left vs right). */
+  private getGroupEditorComponent(group: EditorGroup): MarkdownEditorComponent | undefined {
+    return group.id === 'g1' ? this.editorLeft : this.editorRight;
+  }
+  private getGroupPreviewComponent(group: EditorGroup): MarkdownPreviewComponent | undefined {
+    return group.id === 'g1' ? this.previewLeft : this.previewRight;
+  }
+
+  /**
+   * Capture the current scroll position of a group's active tab from
+   * whichever pane(s) are visible, so it can be restored later regardless
+   * of view mode or which tab becomes active next.
+   */
+  private captureScrollPosition(group: EditorGroup) {
+    const tab = group.tabs.find(t => t.id === group.activeTabId);
+    if (!tab) return;
+    const editorComp = this.getGroupEditorComponent(group);
+    const previewComp = this.getGroupPreviewComponent(group);
+    let frac: number | null = null;
+    if (group.viewMode === 'edit') {
+      frac = editorComp?.getScrollFraction() ?? null;
+    } else if (group.viewMode === 'preview') {
+      frac = previewComp?.getScrollFraction() ?? null;
+    } else {
+      // split — prefer editor's position (source of truth when synced)
+      frac = editorComp?.getScrollFraction() ?? previewComp?.getScrollFraction() ?? null;
+    }
+    if (frac !== null) tab.scrollFraction = frac;
+  }
+
+  /** Restore a group's active tab's saved scroll position into the visible pane(s). */
+  private restoreScrollPosition(group: EditorGroup) {
+    const tab = group.tabs.find(t => t.id === group.activeTabId);
+    const frac = tab?.scrollFraction ?? 0;
+    const editorComp = this.getGroupEditorComponent(group);
+    const previewComp = this.getGroupPreviewComponent(group);
+    if (group.viewMode === 'edit' || group.viewMode === 'split') {
+      editorComp?.setScrollFraction(frac);
+    }
+    if (group.viewMode === 'preview' || group.viewMode === 'split') {
+      previewComp?.setScrollFraction(frac);
+    }
   }
 
   // ── Workspace ──────────────────────────────────────────────
@@ -517,6 +562,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   activateTab(tabId: string) {
     const group = this.groups.find(g => g.tabs.some(t => t.id === tabId));
     if (group) {
+      if (group.activeTabId && group.activeTabId !== tabId) this.captureScrollPosition(group);
       this.activeGroupId = group.id;
       group.activeTabId = tabId;
     }
@@ -524,8 +570,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     this.updateDirtyState();
     this.saveSettings();
     setTimeout(() => {
-      this.markdownEditor?.scrollToTop();
-      this.markdownPreview?.scrollToTop();
+      if (group) this.restoreScrollPosition(group);
     }, 0);
   }
 
@@ -536,6 +581,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       if (!confirmed) return;
     }
     if (tab.filePath) this.electronService.unwatchFile(tab.filePath);
+    tab.scrollFraction = undefined; // clear saved scroll position for closed tab
 
     const group = this.groups.find(g => g.tabs.includes(tab));
     if (!group) return;
@@ -780,6 +826,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   setViewMode(mode: 'preview' | 'edit' | 'split') {
+    const group = this.activeGroup;
+    this.captureScrollPosition(group);
     this.viewMode = mode; // setter delegates to activeGroup
     if (mode === 'preview') this.isReplaceVisible = false;
     this.saveSettings();
@@ -787,10 +835,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     if (mode === 'split') {
       setTimeout(() => {
         this.setupScrollSync();
+        this.restoreScrollPosition(group);
         if (this.searchState.isActive) this.applySearchHighlighting();
       }, 100);
     } else {
       this.scrollSyncService.cleanup();
+      setTimeout(() => this.restoreScrollPosition(group), 0);
       if (this.searchState.isActive) {
         setTimeout(() => this.applySearchHighlighting(), 50);
       }
@@ -1286,7 +1336,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (searchMode === SearchMode.EDITOR || searchMode === SearchMode.SPLIT) {
-      this.markdownEditor?.highlightSearchResults(query, results, currentIndex);
+      this.markdownEditor?.highlightSearchResults(query, results, currentIndex, this.searchOptions);
     }
     if (searchMode === SearchMode.PREVIEW || searchMode === SearchMode.SPLIT) {
       this.markdownPreview?.highlightSearchResults(query, results, currentIndex, this.searchOptions.caseSensitive);

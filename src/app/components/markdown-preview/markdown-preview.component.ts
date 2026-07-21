@@ -6,7 +6,10 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
+import type { Mermaid } from 'mermaid';
+import { Subscription } from 'rxjs';
 import { ElectronService } from '../../services/electron.service';
+import { ThemeService } from '../../services/theme.service';
 
 @Component({
   selector: 'app-markdown-preview',
@@ -23,6 +26,10 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
   originalHtmlContent: string = '';
 
   private needsListeners = false;
+  private needsMermaidRender = false;
+  private themeSub?: Subscription;
+  private mermaid?: Mermaid;
+  private mermaidTheme: 'light' | 'dark' = 'light';
   private lastHighlightQuery: string = '';
   private lastHighlightCount: number = 0;
   private highlightDebounceTimer: any = null;
@@ -55,9 +62,31 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
   constructor(
     private sanitizer: DomSanitizer,
-    private electronService: ElectronService
+    private electronService: ElectronService,
+    private themeService: ThemeService
   ) {
     this.configureMarked();
+    this.mermaidTheme = this.themeService.getCurrentTheme();
+    this.themeSub = this.themeService.currentTheme$.subscribe(theme => {
+      this.mermaidTheme = theme;
+      this.mermaid = undefined; // force re-init with new theme on next render
+      this.needsMermaidRender = true;
+      this.htmlContent = this.sanitizeAndTrust(this.originalHtmlContent);
+    });
+  }
+
+  /** Lazily import mermaid (~2MB) only when a diagram is actually present. */
+  private async getMermaid(): Promise<Mermaid> {
+    if (!this.mermaid) {
+      const mod = await import('mermaid');
+      this.mermaid = mod.default;
+      this.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: this.mermaidTheme === 'dark' ? 'dark' : 'default',
+      });
+    }
+    return this.mermaid;
   }
 
   private slugify(text: string): string {
@@ -80,6 +109,9 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
 
     renderer.code = ({ text, lang }: { text: string; lang?: string; escaped?: boolean }) => {
       const codeId = 'code-' + Math.random().toString(36).substr(2, 9);
+      if (lang === 'mermaid') {
+        return `<pre class="mermaid">${this.escapeHtml(text)}</pre>`;
+      }
 
       if (lang && hljs.getLanguage(lang)) {
         try {
@@ -120,6 +152,7 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     this.lastHighlightQuery = '';
     this.lastHighlightCount = 0;
     this.needsListeners = true;
+    this.needsMermaidRender = true;
   }
 
   ngAfterViewChecked() {
@@ -127,15 +160,41 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
       this.attachCopyListeners();
       this.needsListeners = false;
     }
+    if (this.needsMermaidRender) {
+      this.needsMermaidRender = false;
+      this.renderMermaidDiagrams();
+    }
   }
 
   ngOnDestroy() {
     if (this.highlightDebounceTimer) clearTimeout(this.highlightDebounceTimer);
+    this.themeSub?.unsubscribe();
     const el = this.previewElement?.nativeElement;
     if (el) {
       el.removeEventListener('click', this.copyClickHandler);
       el.removeEventListener('click', this.anchorClickHandler);
     }
+  }
+
+  private renderMermaidDiagrams(): void {
+    const el = this.previewElement?.nativeElement;
+    if (!el) return;
+    const nodes = Array.from(el.querySelectorAll<HTMLElement>('pre.mermaid'));
+    if (!nodes.length) return;
+
+    this.getMermaid().then(mermaid => {
+      nodes.forEach((node, i) => {
+        // Cache raw source so re-renders (theme switch) work
+        const source = node.getAttribute('data-src') ?? node.textContent ?? '';
+        node.setAttribute('data-src', source);
+        const id = `mermaid-svg-${Date.now()}-${i}`;
+        mermaid.render(id, source)
+          .then(({ svg }) => { node.innerHTML = svg; })
+          .catch((err) => {
+            node.innerHTML = `<div class="mermaid-error">Mermaid error: ${this.escapeHtml(String(err?.message ?? err))}</div>`;
+          });
+      });
+    });
   }
 
   private attachCopyListeners() {
@@ -186,6 +245,22 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     if (this.previewElement) {
       this.previewElement.nativeElement.scrollTop = 0;
     }
+  }
+
+  /** Current vertical scroll position as a 0-1 fraction of the scrollable range. */
+  getScrollFraction(): number | null {
+    const el = this.previewElement?.nativeElement;
+    if (!el) return null;
+    const max = Math.max(1, el.scrollHeight - el.clientHeight);
+    return el.scrollTop / max;
+  }
+
+  /** Restore vertical scroll position from a 0-1 fraction. */
+  setScrollFraction(frac: number): void {
+    const el = this.previewElement?.nativeElement;
+    if (!el) return;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTop = frac * max;
   }
 
   /**
@@ -342,6 +417,8 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
       ADD_TAGS: ['mark'],
       ADD_ATTR: ['data-code-id', 'class', 'id'],
     });
+    // Any HTML rebuild wipes previously-rendered SVGs, so re-render diagrams.
+    if (clean.includes('class="mermaid"')) this.needsMermaidRender = true;
     return this.sanitizer.bypassSecurityTrustHtml(clean);
   }
 }

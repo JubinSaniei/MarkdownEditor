@@ -1,6 +1,6 @@
 ﻿<div class="editor-wrapper" [class.inline-ai-active]="inlineAi.visible">
 
-  <!-- â”€â”€ Format Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ── Format Toolbar ──────────────────────────────────────── -->
   <div class="format-toolbar" *ngIf="!readOnly">
 
     <!-- Text style -->
@@ -173,7 +173,7 @@
 
   </div>
 
-  <!-- â”€â”€ Cheat Sheet Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ── Cheat Sheet Panel ──────────────────────────────────────── -->
   <div class="cheatsheet-panel" *ngIf="showCheatsheet" #cheatsheetPanel>
     <div class="cs-header">
       <span>Markdown Reference</span>
@@ -258,7 +258,7 @@
     </div>
   </div>
 
-  <!-- â”€â”€ Inline AI Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ── Inline AI Bar ──────────────────────────────────────────── -->
   <div class="inline-ai-bar" *ngIf="inlineAi.visible">
 
     <!-- Header -->
@@ -458,35 +458,8 @@
 
   </div>
 
-  <!-- â”€â”€ Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ── Editor (CodeMirror 6) ─────────────────────────────────── -->
   <div class="editor-container">
-
-    <!-- Line numbers gutter -->
-    <div class="line-numbers" #lineNumbers>
-      <div class="line-number"
-           *ngFor="let n of lineNumberList; trackBy: trackByNumber">{{ n }}</div>
-    </div>
-
-    <!-- Editor area: backdrop + textarea share a position:relative context -->
-    <div class="editor-area">
-      <div class="highlight-clip">
-        <div class="highlight-backdrop" #highlightBackdrop></div>
-      </div>
-      <div class="search-overlay-clip">
-        <div class="search-overlay" #searchOverlay></div>
-      </div>
-      <textarea
-        class="markdown-editor"
-        [value]="content"
-        [attr.readonly]="(readOnly || inlineAi.visible) ? true : null"
-        [attr.spellcheck]="spellcheckEnabled"
-        (input)="onContentChange($event)"
-        (keydown)="onEditorKeyDown($event)"
-        [placeholder]="readOnly ? '' : 'Start typing your markdown here...'"
-        #editor>
-      </textarea>
-    </div>
-
+    <div class="cm-host" #cmHost></div>
   </div>
 </div>
-

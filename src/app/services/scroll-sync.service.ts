@@ -20,7 +20,7 @@ export class ScrollSyncService {
     this.cleanup(); // Clean up any existing listeners
     
     // Get the actual scrollable elements
-    this.editorElement = editorRef.nativeElement.querySelector('textarea');
+    this.editorElement = editorRef.nativeElement.querySelector('.cm-scroller');
     this.previewElement = previewRef.nativeElement.querySelector('.preview-content');
     
     if (!this.editorElement || !this.previewElement) {
