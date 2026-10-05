@@ -9,8 +9,8 @@ import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import { AiService } from '../../services/ai.service';
 import { AiSettingsService } from '../../services/ai-settings.service';
-import { ElectronService } from '../../services/electron.service';
-import { AiProvider, AiChatMessage } from '../../interfaces/ai-settings.interface';
+import { ElectronService, ClaudeSessionInfo } from '../../services/electron.service';
+import { AiProvider, AiChatMessage, AiUsageInfo } from '../../interfaces/ai-settings.interface';
 
 function escapeHtmlForPanel(text: string): string {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -112,6 +112,26 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
 
   @ViewChild('folderSearchInput') folderSearchInputRef?: ElementRef<HTMLInputElement>;
 
+  // ── Claude CLI session (prompt-cache preservation) ───────────
+  // The CLI owns the transcript, so a conversation maps to one CLI session that
+  // we --resume every turn. Two consequences we rely on below:
+  //   • history is never re-sent (the CLI already has it);
+  //   • a document is uploaded ONCE per session — re-sending identical text
+  //     would append a duplicate block and push the cached prefix out of shape.
+  private cliSessionId: string | null = null;
+  /** Directory a loaded session must be resumed from (null = app default). */
+  private cliSessionCwd: string | null = null;
+  /** Title for our own index — the first question typed, minus document context. */
+  private cliSessionTitle = '';
+  private sentContextKeys = new Set<string>();
+
+  // Session history picker
+  showSessionPicker = false;
+  sessions: ClaudeSessionInfo[] = [];
+  isLoadingSessions = false;
+  /** Token usage of the last turn — shows whether the cache was actually hit. */
+  lastUsage: AiUsageInfo | null = null;
+
   private streamSub?: Subscription;
   private shouldScrollToBottom = false;
   // True when the user has manually scrolled up during streaming.
@@ -128,10 +148,31 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     private sanitizer: DomSanitizer
   ) {}
 
+  /**
+   * Rendered markdown, memoized by source text.
+   *
+   * This is bound with [innerHTML] and called from the template, so it runs on
+   * EVERY change-detection pass. Returning a fresh SafeHtml each time makes
+   * Angular see a new value and rewrite the element's innerHTML — destroying
+   * and rebuilding the DOM nodes, which wipes any active text selection. Mouse
+   * events trigger change detection, so releasing the button killed the very
+   * selection the user just made. Returning the same reference keeps the nodes
+   * (and the selection) alive.
+   */
+  private renderedMarkdownCache = new Map<string, SafeHtml>();
+
   renderMarkdown(content: string): SafeHtml {
+    const cached = this.renderedMarkdownCache.get(content);
+    if (cached) return cached;
+
     const html = panelMarked.parse(content) as string;
     const clean = DOMPurify.sanitize(html);
-    return this.sanitizer.bypassSecurityTrustHtml(clean);
+    const safe = this.sanitizer.bypassSecurityTrustHtml(clean);
+
+    // Bounded: conversations are finite, but never let this grow forever.
+    if (this.renderedMarkdownCache.size > 300) this.renderedMarkdownCache.clear();
+    this.renderedMarkdownCache.set(content, safe);
+    return safe;
   }
 
   renderStreamingMarkdown(content: string): SafeHtml {
@@ -153,8 +194,110 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       bedrock: 'Bedrock',
+      'claude-cli': 'Claude CLI',
     };
     return labels[this.activeProvider];
+  }
+
+  /** True while a Claude CLI conversation is live (i.e. turns are being resumed). */
+  get isCliSessionActive(): boolean {
+    return this.activeProvider === 'claude-cli' && !!this.cliSessionId;
+  }
+
+  /** Short cache summary for the status line, e.g. "cache 12.4k read". */
+  get cacheSummary(): string {
+    const u = this.lastUsage;
+    if (!u) return '';
+    const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+    const bits: string[] = [];
+    if (u.cacheReadTokens)     bits.push(`${fmt(u.cacheReadTokens)} cached`);
+    if (u.cacheCreationTokens) bits.push(`${fmt(u.cacheCreationTokens)} new`);
+    return bits.join(' · ');
+  }
+
+  // ── Session history ──────────────────────────────────────────
+
+  async toggleSessionPicker(): Promise<void> {
+    this.showSessionPicker = !this.showSessionPicker;
+    if (this.showSessionPicker) await this.refreshSessions();
+  }
+
+  private async refreshSessions(): Promise<void> {
+    this.isLoadingSessions = true;
+    try {
+      const cli = this.aiSettingsService.snapshot.claudeCli;
+      this.sessions = await this.electronService.claudeCliListSessions({
+        claudeCliConfigDir: cli.configDir,
+        claudeCliWorkingDir: cli.workingDir,
+      });
+    } finally {
+      this.isLoadingSessions = false;
+    }
+  }
+
+  /**
+   * Replace the current chat with a saved conversation and continue it.
+   *
+   * The transcript's own cwd is adopted, because Claude Code looks sessions up
+   * by working directory — resuming from anywhere else would silently start a
+   * cold conversation instead.
+   */
+  async loadSession(session: ClaudeSessionInfo): Promise<void> {
+    this.stop();
+    const result = await this.electronService.claudeCliLoadSession(session.filePath);
+    if (!result.ok) {
+      this.error = result.error || 'Could not read that conversation';
+      return;
+    }
+    this.messages = result.messages.map(m => ({ role: m.role, content: m.content }));
+    this.cliSessionId = result.sessionId ?? session.sessionId;
+    this.cliSessionCwd = result.cwd || session.cwd || null;
+    this.cliSessionTitle = session.title || '';
+    // We cannot know which documents this session already contains, so nothing
+    // is assumed sent — the next turn re-attaches current context once.
+    this.sentContextKeys.clear();
+    this.lastUsage = null;
+    this.error = '';
+    this.showSessionPicker = false;
+    this.shouldScrollToBottom = true;
+  }
+
+  /**
+   * Write this conversation into our own sessions.json after a completed turn.
+   * Done here rather than at session start because the transcript file only
+   * exists once the CLI has finished writing the turn.
+   */
+  private recordCliSession(): void {
+    if (this.activeProvider !== 'claude-cli' || !this.cliSessionId) return;
+    const cli = this.aiSettingsService.snapshot.claudeCli;
+    this.electronService.claudeCliRecordSession({
+      claudeCliConfigDir: cli.configDir,
+      claudeCliWorkingDir: cli.workingDir,
+      sessionId: this.cliSessionId,
+      cwd: this.cliSessionCwd || '',
+      title: this.cliSessionTitle,
+      messageCount: this.messages.length,
+    }).catch(() => {});
+  }
+
+  sessionTimeLabel(updatedAt: number): string {
+    const mins = Math.floor((Date.now() - updatedAt) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  /**
+   * Stable fingerprint for a block of context. Content is part of the key, so
+   * an edited document counts as new material and is re-sent, while unchanged
+   * text is skipped for the rest of the session.
+   */
+  private contextKey(kind: string, id: string, content: string): string {
+    let hash = 5381;
+    for (let i = 0; i < content.length; i++) hash = ((hash * 33) ^ content.charCodeAt(i)) >>> 0;
+    return `${kind}:${id}:${content.length}:${hash.toString(36)}`;
   }
 
   get currentFileName(): string {
@@ -478,6 +621,9 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     if (!text || this.isStreaming) return;
 
     this.error = '';
+    // The typed question makes a far better title than the outgoing prompt,
+    // which starts with whatever documents are attached.
+    if (!this.cliSessionTitle) this.cliSessionTitle = text.slice(0, 120);
     // Snapshot history before pushing the current user message
     const history: AiChatMessage[] = this.messages.map(m => ({ role: m.role, content: m.content }));
     this.messages.push({ role: 'user', content: text });
@@ -487,15 +633,28 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     this.userScrolledUp = false; // always follow a new conversation turn
     this.shouldScrollToBottom = true;
 
+    // With a resumable CLI session the transcript persists between turns, so
+    // only *new* material is worth sending. Re-uploading an unchanged document
+    // would both waste tokens and lengthen the prefix the cache has to match.
+    const dedupeContext = this.activeProvider === 'claude-cli';
     const contextParts: string[] = [];
+    const keysThisTurn: string[] = [];
+    const addContext = (kind: string, id: string, content: string, block: string) => {
+      const key = this.contextKey(kind, id, content);
+      if (dedupeContext && this.sentContextKeys.has(key)) return;
+      contextParts.push(block);
+      keysThisTurn.push(key);
+    };
 
     if (this.includeFileContent && this.currentContent.trim()) {
-      contextParts.push(`Current file:\n\`\`\`\n${this.currentContent}\n\`\`\``);
+      addContext('file', this.currentFilePath || 'current', this.currentContent,
+        `Current file:\n\`\`\`\n${this.currentContent}\n\`\`\``);
     }
 
     for (const file of this.contextFiles) {
       if (file.content !== undefined) {
-        contextParts.push(`File "${file.relativePath}":\n\`\`\`\n${file.content}\n\`\`\``);
+        addContext('file', file.path, file.content,
+          `File "${file.relativePath}":\n\`\`\`\n${file.content}\n\`\`\``);
       }
     }
 
@@ -511,7 +670,8 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
 
           // Always tell the AI the full file listing
           const listing = allFiles.map(f => f.relativePath).join('\n');
-          contextParts.push(`Folder "${folder.name}" contains ${allFiles.length} markdown file(s):\n${listing}`);
+          addContext('folder', folder.path, listing,
+            `Folder "${folder.name}" contains ${allFiles.length} markdown file(s):\n${listing}`);
 
           // For small folders (≤20 files), send all file contents directly.
           // For larger folders, use keyword search to pick the most relevant files.
@@ -520,13 +680,15 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
             for (const file of allFiles) {
               try {
                 const content = await this.electronService.readFile(file.path);
-                contextParts.push(`File "${file.relativePath}" (from ${folder.name}):\n\`\`\`\n${content}\n\`\`\``);
+                addContext('file', file.path, content,
+                  `File "${file.relativePath}" (from ${folder.name}):\n\`\`\`\n${content}\n\`\`\``);
               } catch (_) {}
             }
           } else if (keywords.length > 0) {
             const matches = await this.electronService.grepMdFiles(folder.path, keywords, 10);
             for (const file of matches) {
-              contextParts.push(`File "${file.relativePath}" (from ${folder.name}):\n\`\`\`\n${file.content}\n\`\`\``);
+              addContext('file', file.path, file.content,
+                `File "${file.relativePath}" (from ${folder.name}):\n\`\`\`\n${file.content}\n\`\`\``);
             }
           }
         }
@@ -543,6 +705,8 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
 
     this.streamSub = this.aiService.stream({
       provider: this.activeProvider,
+      sessionId: this.cliSessionId,
+      workingDir: this.cliSessionCwd,
       prompt,
       systemPrompt: 'You are a markdown document assistant. You help users with two things: (1) questions about the documents they provide — summarizing, analyzing, or answering questions about their content; (2) markdown syntax and formatting — explaining how to write tables, headings, code blocks, links, and any other markdown features. If the user asks about anything outside these two areas, politely decline and explain what you can help with.',
       history,
@@ -551,6 +715,12 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
         if (chunk.type === 'chunk' && chunk.text) {
           this.streamingText += chunk.text;
           this.shouldScrollToBottom = true;
+        } else if (chunk.type === 'session' && chunk.sessionId) {
+          // Capture on the first turn so every later turn resumes instead of
+          // starting a cold conversation.
+          this.cliSessionId = chunk.sessionId;
+        } else if (chunk.type === 'usage') {
+          this.lastUsage = chunk.usage ?? null;
         }
       },
       error: (err: Error) => {
@@ -568,6 +738,10 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
           this.messages.push({ role: 'assistant', content: this.streamingText });
           this.streamingText = '';
         }
+        // Only now is the context provably part of the CLI transcript. Marking
+        // it on error instead could silently drop a document from the session.
+        for (const key of keysThisTurn) this.sentContextKeys.add(key);
+        this.recordCliSession();
         this.shouldScrollToBottom = true;
       },
     });
@@ -592,6 +766,13 @@ export class AiPanelComponent implements OnDestroy, AfterViewChecked {
     this.messages = [];
     this.streamingText = '';
     this.error = '';
+    // Abandon the CLI session too — a fresh chat must not resume the old
+    // transcript, and previously-sent documents have to be re-sent.
+    this.cliSessionId = null;
+    this.cliSessionCwd = null;
+    this.cliSessionTitle = '';
+    this.sentContextKeys.clear();
+    this.lastUsage = null;
   }
 
   private scrollToBottom(): void {

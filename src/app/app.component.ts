@@ -24,12 +24,14 @@ interface EditorTab {
   label?: string; // overrides display name when set
   externallyChanged?: boolean; // true when file was modified outside the app
   scrollFraction?: number; // 0-1 scroll position, shared across view modes (edit/preview/split)
+  viewMode?: 'preview' | 'edit' | 'split'; // per-tab view mode; undefined falls back to the group default
 }
 
 interface EditorGroup {
   id: string;
   tabs: EditorTab[];
   activeTabId: string;
+  /** Default / last-used view mode for this group — applied to tabs that have no explicit mode. */
   viewMode: 'preview' | 'edit' | 'split';
   paneWidth: number; // editor pane % width within this group's split view
 }
@@ -83,6 +85,21 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
+   * Effective view mode of a group = its active tab's own mode, falling back
+   * to the group default when that tab has never had one set explicitly.
+   * All template bindings go through here so each tab renders its own mode.
+   */
+  getGroupViewMode(group: EditorGroup): 'preview' | 'edit' | 'split' {
+    const tab = group.tabs.find(t => t.id === group.activeTabId);
+    return tab?.viewMode ?? group.viewMode;
+  }
+
+  /** Effective view mode of a single tab (for per-tab UI such as tab badges). */
+  getTabViewMode(tab: EditorTab, group: EditorGroup): 'preview' | 'edit' | 'split' {
+    return tab.viewMode ?? group.viewMode;
+  }
+
+  /**
    * Capture the current scroll position of a group's active tab from
    * whichever pane(s) are visible, so it can be restored later regardless
    * of view mode or which tab becomes active next.
@@ -93,9 +110,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     const editorComp = this.getGroupEditorComponent(group);
     const previewComp = this.getGroupPreviewComponent(group);
     let frac: number | null = null;
-    if (group.viewMode === 'edit') {
+    const mode = this.getGroupViewMode(group);
+    if (mode === 'edit') {
       frac = editorComp?.getScrollFraction() ?? null;
-    } else if (group.viewMode === 'preview') {
+    } else if (mode === 'preview') {
       frac = previewComp?.getScrollFraction() ?? null;
     } else {
       // split — prefer editor's position (source of truth when synced)
@@ -110,10 +128,11 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     const frac = tab?.scrollFraction ?? 0;
     const editorComp = this.getGroupEditorComponent(group);
     const previewComp = this.getGroupPreviewComponent(group);
-    if (group.viewMode === 'edit' || group.viewMode === 'split') {
+    const mode = this.getGroupViewMode(group);
+    if (mode === 'edit' || mode === 'split') {
       editorComp?.setScrollFraction(frac);
     }
-    if (group.viewMode === 'preview' || group.viewMode === 'split') {
+    if (mode === 'preview' || mode === 'split') {
       previewComp?.setScrollFraction(frac);
     }
   }
@@ -167,11 +186,18 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.activeTab?.content ?? '';
   }
 
+  /** View mode of the focused tab (what the toolbar buttons reflect). */
   get viewMode(): 'preview' | 'edit' | 'split' {
-    return this.activeGroup?.viewMode ?? 'preview';
+    const group = this.activeGroup;
+    return group ? this.getGroupViewMode(group) : 'preview';
   }
   set viewMode(mode: 'preview' | 'edit' | 'split') {
-    if (this.activeGroup) this.activeGroup.viewMode = mode;
+    const group = this.activeGroup;
+    if (!group) return;
+    const tab = group.tabs.find(t => t.id === group.activeTabId);
+    if (tab) tab.viewMode = mode;
+    // Remember as the group default so newly opened tabs can inherit it.
+    group.viewMode = mode;
   }
 
   get editorPaneWidth(): number {
@@ -196,6 +222,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     viewMode: 'preview' | 'edit' | 'split';
     paneWidth: number;
     tabPaths: string[];
+    tabViewModes: Record<string, 'preview' | 'edit' | 'split'>;
     activeTabPath: string | null;
   }> = [];
   private restoredActiveGroupId: string = 'g1';
@@ -326,7 +353,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
             const content = await this.fileService.readFile(filePath);
             const tab: EditorTab = {
               id: `${Date.now()}-${group.tabs.length}`,
-              filePath, content, isDirty: false, isPreview: false
+              filePath, content, isDirty: false, isPreview: false,
+              viewMode: groupData.tabViewModes[filePath] ?? group.viewMode
             };
             group.tabs.push(tab);
             await this.electronService.watchFile(filePath);
@@ -532,6 +560,17 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Tab Management ────────────────────────────────────────
 
+  /**
+   * Policy: which view mode a freshly created tab starts in.
+   *
+   * Current rule — inherit the mode last chosen in this group, so opening a
+   * batch of files while in "edit" keeps you in edit, while an existing tab
+   * you already switched to "preview" stays in preview.
+   */
+  private initialViewModeForNewTab(group: EditorGroup): 'preview' | 'edit' | 'split' {
+    return group.viewMode;
+  }
+
   async openFileAsNewTab(filePath: string) {
     if (!filePath) return;
     // Search all groups for existing tab
@@ -547,7 +586,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       const content = await this.fileService.readFile(filePath);
       const tab: EditorTab = {
         id: Date.now().toString(),
-        filePath, content, isDirty: false, isPreview: false
+        filePath, content, isDirty: false, isPreview: false,
+        viewMode: this.initialViewModeForNewTab(this.activeGroup)
       };
       this.activeGroup.tabs.push(tab);
       this.activateTab(tab.id);
@@ -568,9 +608,16 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     if (this.searchState.isActive) this.closeSearch();
     this.updateDirtyState();
+    // The new tab may render a different view mode than the previous one —
+    // re-sync search scope and editor/preview scroll pairing accordingly.
+    this.updateSearchMode();
+    this.scrollSyncService.cleanup();
     this.saveSettings();
     setTimeout(() => {
-      if (group) this.restoreScrollPosition(group);
+      if (group) {
+        if (this.getGroupViewMode(group) === 'split') this.setupScrollSync();
+        this.restoreScrollPosition(group);
+      }
     }, 0);
   }
 
@@ -621,7 +668,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
   newFile() {
     const tab: EditorTab = {
       id: Date.now().toString(),
-      filePath: null, content: '', isDirty: false, isPreview: false
+      filePath: null, content: '', isDirty: false, isPreview: false,
+      viewMode: this.initialViewModeForNewTab(this.activeGroup)
     };
     this.activeGroup.tabs.push(tab);
     this.activateTab(tab.id);
@@ -648,13 +696,12 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         isDirty: false,
         isPreview: false,
         readOnly: true,
-        label: 'README'
+        label: 'README',
+        // README is read-only — never open it straight into the editor pane.
+        viewMode: this.initialViewModeForNewTab(this.activeGroup) === 'edit' ? 'preview' : this.initialViewModeForNewTab(this.activeGroup)
       };
       this.activeGroup.tabs.push(tab);
       this.activateTab(tab.id);
-      if (this.viewMode === 'edit') {
-        this.setViewMode('preview');
-      }
     } catch (_) {}
   }
 
@@ -709,7 +756,8 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
       } else {
         const tab: EditorTab = {
           id: Date.now().toString(),
-          filePath, content, isDirty: false, isPreview: true
+          filePath, content, isDirty: false, isPreview: true,
+          viewMode: this.initialViewModeForNewTab(this.activeGroup)
         };
         this.activeGroup.tabs.push(tab);
         this.activateTab(tab.id);
@@ -1345,6 +1393,19 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ── Settings Persistence ──────────────────────────────────
 
+  /** Validate the persisted `{ filePath: viewMode }` map coming out of localStorage. */
+  private sanitizeTabViewModes(raw: any): Record<string, 'preview' | 'edit' | 'split'> {
+    const out: Record<string, 'preview' | 'edit' | 'split'> = {};
+    if (raw && typeof raw === 'object') {
+      for (const [path, mode] of Object.entries(raw)) {
+        if (typeof path === 'string' && path && ['preview', 'edit', 'split'].includes(mode as string)) {
+          out[path] = mode as 'preview' | 'edit' | 'split';
+        }
+      }
+    }
+    return out;
+  }
+
   private loadSettings() {
     try {
       const raw = localStorage.getItem('markdownEditorSettings');
@@ -1377,6 +1438,7 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
           viewMode: (['preview', 'edit', 'split'].includes(g.viewMode) ? g.viewMode : 'preview') as 'preview' | 'edit' | 'split',
           paneWidth: typeof g.paneWidth === 'number' ? Math.max(15, Math.min(85, g.paneWidth)) : 50,
           tabPaths: Array.isArray(g.tabPaths) ? g.tabPaths.filter((p: any) => typeof p === 'string' && p) : [],
+          tabViewModes: this.sanitizeTabViewModes(g.tabViewModes),
           activeTabPath: typeof g.activeTabPath === 'string' ? g.activeTabPath : null,
         }));
 
@@ -1420,6 +1482,10 @@ export class AppComponent implements OnInit, AfterViewInit, OnDestroy {
         viewMode: g.viewMode,
         paneWidth: g.paneWidth,
         tabPaths: g.tabs.map(t => t.filePath).filter(Boolean),
+        tabViewModes: g.tabs.reduce((acc, t) => {
+          if (t.filePath) acc[t.filePath] = t.viewMode ?? g.viewMode;
+          return acc;
+        }, {} as Record<string, 'preview' | 'edit' | 'split'>),
         activeTabPath: g.tabs.find(t => t.id === g.activeTabId)?.filePath ?? null,
       }))
     };

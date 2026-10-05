@@ -11,6 +11,8 @@ const DEFAULTS: AiNonSensitiveSettings = {
   anthropic: { model: 'claude-sonnet-4-5', baseUrl: '' },
   bedrock:   { profile: 'default', region: 'us-east-1',
                modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0' },
+  claudeCli: { cliPath: 'claude', model: '', workingDir: '', configDir: '',
+               ignoreEnvAuth: true, safeMode: true },
 };
 
 @Injectable({ providedIn: 'root' })
@@ -41,7 +43,7 @@ export class AiSettingsService {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return { ...DEFAULTS };
       const p = JSON.parse(raw);
-      const validProviders = ['openai', 'anthropic', 'bedrock'];
+      const validProviders = ['openai', 'anthropic', 'bedrock', 'claude-cli'];
       const activeProvider = validProviders.includes(p.activeProvider)
         ? p.activeProvider
         : DEFAULTS.activeProvider;
@@ -50,6 +52,7 @@ export class AiSettingsService {
         openai:    { ...DEFAULTS.openai,    ...p.openai },
         anthropic: { ...DEFAULTS.anthropic, ...p.anthropic },
         bedrock:   { ...DEFAULTS.bedrock,   ...p.bedrock },
+        claudeCli: { ...DEFAULTS.claudeCli, ...p.claudeCli },
       };
     } catch (_) { return { ...DEFAULTS }; }
   }

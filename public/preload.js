@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiKeyGet: (provider) => ipcRenderer.invoke('ai-key-get', provider),
   aiKeyDelete: (provider) => ipcRenderer.invoke('ai-key-delete', provider),
   aiKeyStatus: () => ipcRenderer.invoke('ai-key-status'),
+  aiTestConnection: (payload) => ipcRenderer.invoke('ai-test-connection', payload),
+  claudeCliListSessions: (payload) => ipcRenderer.invoke('claude-cli-list-sessions', payload),
+  claudeCliLoadSession: (payload) => ipcRenderer.invoke('claude-cli-load-session', payload),
+  claudeCliRecordSession: (payload) => ipcRenderer.invoke('claude-cli-record-session', payload),
 
   // AI folder grep
   grepMdFiles: (params) => ipcRenderer.invoke('grep-md-files', params),

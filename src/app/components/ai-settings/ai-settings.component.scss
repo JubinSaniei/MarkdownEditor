@@ -269,13 +269,125 @@
   gap: 6px;
 }
 
+// ── Connection Test Result ──────────────────────────────────
+.asm-test-result {
+  margin: 0 20px 4px;
+  padding: 10px 12px;
+  font-size: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+
+  &.ok {
+    color: #2e7d32;
+    background: color-mix(in srgb, #2e7d32 8%, transparent);
+    border-color: color-mix(in srgb, #2e7d32 30%, transparent);
+  }
+
+  &.fail {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  }
+}
+
+.asm-test-headline {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.asm-test-status {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.asm-test-stage {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+
+  &.ok   { color: #2e7d32; }
+  &.fail { color: var(--danger); }
+
+  code {
+    font-size: 10px;
+    opacity: 0.7;
+    word-break: break-all;
+  }
+}
+
+.asm-test-stage-mark {
+  font-weight: 700;
+}
+
+.asm-test-stage-name {
+  font-weight: 500;
+  min-width: 130px;
+}
+
+.asm-test-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+
+  code {
+    font-size: 11px;
+    word-break: break-all;
+  }
+}
+
+.asm-test-label {
+  min-width: 72px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.asm-test-note {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.asm-test-body {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 130px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
 // ── Footer ──────────────────────────────────────────────────
 .asm-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 20px 16px;
   border-top: 1px solid var(--border-primary);
+}
+
+.asm-footer-spacer {
+  flex: 1;
+}
+
+.asm-btn-test {
+  background: none;
+  color: var(--text-secondary);
+  border-color: var(--border-primary);
+
+  &:hover:not(:disabled) {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
 }
 
 .asm-btn {

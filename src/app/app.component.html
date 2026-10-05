@@ -288,13 +288,13 @@
 
         <!-- Left group content -->
         <div class="group-content" #groupLeftContent
-             [class.split]="groups[0].viewMode === 'split'">
+             [class.split]="getGroupViewMode(groups[0]) === 'split'">
 
           <!-- Editor pane -->
           <div class="pane editor-pane"
-               *ngIf="groups[0].viewMode === 'edit' || groups[0].viewMode === 'split'"
-               [style.flex-basis]="groups[0].viewMode === 'split' ? groups[0].paneWidth + '%' : null"
-               [style.flex-grow]="groups[0].viewMode === 'split' ? 0 : 1">
+               *ngIf="getGroupViewMode(groups[0]) === 'edit' || getGroupViewMode(groups[0]) === 'split'"
+               [style.flex-basis]="getGroupViewMode(groups[0]) === 'split' ? groups[0].paneWidth + '%' : null"
+               [style.flex-grow]="getGroupViewMode(groups[0]) === 'split' ? 0 : 1">
             <app-markdown-editor
               #editorLeft
               [content]="getGroupActiveContent(groups[0])"
@@ -305,18 +305,20 @@
 
           <!-- Split divider (within left group) -->
           <div class="split-divider"
-               *ngIf="groups[0].viewMode === 'split'"
+               *ngIf="getGroupViewMode(groups[0]) === 'split'"
                [class.dragging]="isDraggingSplit"
                (mousedown)="onSplitDividerMouseDown($event, 'g1')"></div>
 
           <!-- Preview pane -->
           <div class="pane preview-pane"
-               *ngIf="groups[0].viewMode === 'preview' || groups[0].viewMode === 'split'"
-               [style.flex-basis]="groups[0].viewMode === 'split' ? (100 - groups[0].paneWidth) + '%' : null"
-               [style.flex-grow]="groups[0].viewMode === 'split' ? 0 : 1">
+               *ngIf="getGroupViewMode(groups[0]) === 'preview' || getGroupViewMode(groups[0]) === 'split'"
+               [style.flex-basis]="getGroupViewMode(groups[0]) === 'split' ? (100 - groups[0].paneWidth) + '%' : null"
+               [style.flex-grow]="getGroupViewMode(groups[0]) === 'split' ? 0 : 1">
             <app-markdown-preview
               #previewLeft
-              [content]="getGroupActiveContent(groups[0])">
+              [content]="getGroupActiveContent(groups[0])"
+              [basePath]="getGroupActiveTab(groups[0])?.filePath ?? null"
+              (internalLinkClicked)="openFileAsNewTab($event)">
             </app-markdown-preview>
           </div>
 
@@ -386,13 +388,13 @@
 
         <!-- Right group content -->
         <div class="group-content" #groupRightContent
-             [class.split]="groups[1].viewMode === 'split'">
+             [class.split]="getGroupViewMode(groups[1]) === 'split'">
 
           <!-- Editor pane -->
           <div class="pane editor-pane"
-               *ngIf="groups[1].viewMode === 'edit' || groups[1].viewMode === 'split'"
-               [style.flex-basis]="groups[1].viewMode === 'split' ? groups[1].paneWidth + '%' : null"
-               [style.flex-grow]="groups[1].viewMode === 'split' ? 0 : 1">
+               *ngIf="getGroupViewMode(groups[1]) === 'edit' || getGroupViewMode(groups[1]) === 'split'"
+               [style.flex-basis]="getGroupViewMode(groups[1]) === 'split' ? groups[1].paneWidth + '%' : null"
+               [style.flex-grow]="getGroupViewMode(groups[1]) === 'split' ? 0 : 1">
             <app-markdown-editor
               #editorRight
               [content]="getGroupActiveContent(groups[1])"
@@ -403,18 +405,20 @@
 
           <!-- Split divider (within right group) -->
           <div class="split-divider"
-               *ngIf="groups[1].viewMode === 'split'"
+               *ngIf="getGroupViewMode(groups[1]) === 'split'"
                [class.dragging]="isDraggingSplit"
                (mousedown)="onSplitDividerMouseDown($event, 'g2')"></div>
 
           <!-- Preview pane -->
           <div class="pane preview-pane"
-               *ngIf="groups[1].viewMode === 'preview' || groups[1].viewMode === 'split'"
-               [style.flex-basis]="groups[1].viewMode === 'split' ? (100 - groups[1].paneWidth) + '%' : null"
-               [style.flex-grow]="groups[1].viewMode === 'split' ? 0 : 1">
+               *ngIf="getGroupViewMode(groups[1]) === 'preview' || getGroupViewMode(groups[1]) === 'split'"
+               [style.flex-basis]="getGroupViewMode(groups[1]) === 'split' ? (100 - groups[1].paneWidth) + '%' : null"
+               [style.flex-grow]="getGroupViewMode(groups[1]) === 'split' ? 0 : 1">
             <app-markdown-preview
               #previewRight
-              [content]="getGroupActiveContent(groups[1])">
+              [content]="getGroupActiveContent(groups[1])"
+              [basePath]="getGroupActiveTab(groups[1])?.filePath ?? null"
+              (internalLinkClicked)="openFileAsNewTab($event)">
             </app-markdown-preview>
           </div>
 

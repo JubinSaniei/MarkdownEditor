@@ -6,6 +6,39 @@ declare global {
   }
 }
 
+/** Result of probing a provider endpoint (see `ai-test-connection` in electron.js). */
+export interface AiConnectionTestResult {
+  ok: boolean;
+  provider?: string;
+  url?: string;
+  status?: number;
+  /** Which credential the main process actually used: saved / env / none. */
+  keySource?: string;
+  keyPreview?: string;
+  /** Per-stage breakdown: gateway/key check vs. real upstream completion. */
+  stages?: AiConnectionTestStage[];
+  message: string;
+}
+
+/** A saved Claude CLI conversation, as discovered on disk. */
+export interface ClaudeSessionInfo {
+  sessionId: string;
+  filePath: string;
+  /** Directory the session must be resumed from — read from the transcript. */
+  cwd: string;
+  title: string;
+  messageCount: number;
+  updatedAt: number;
+}
+
+export interface AiConnectionTestStage {
+  name: string;
+  url: string;
+  ok: boolean;
+  status?: number;
+  message: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -164,6 +197,47 @@ export class ElectronService {
     return { openaiKeySet: false, anthropicKeySet: false, openaiEnvKey: false, anthropicEnvKey: false };
   }
 
+  /** Probe the configured provider endpoint and report the raw result. */
+  async aiTestConnection(payload: object): Promise<AiConnectionTestResult> {
+    if (!this.isElectron) return { ok: false, message: 'Electron not available' };
+    // The bridge is created in preload.js, which only reloads when Electron
+    // itself restarts — an Angular hot-reload alone leaves it missing.
+    if (typeof window.electronAPI.aiTestConnection !== 'function') {
+      return {
+        ok: false,
+        message: 'Test connection is not available in the running Electron process. ' +
+                 'Fully restart the app (stop and re-run npm run electron-dev) — ' +
+                 'preload.js and electron.js are not hot-reloaded.',
+      };
+    }
+    return await window.electronAPI.aiTestConnection(payload);
+  }
+
+  /** List saved Claude CLI conversations, newest first. */
+  async claudeCliListSessions(payload: object): Promise<ClaudeSessionInfo[]> {
+    if (!this.isElectron || typeof window.electronAPI.claudeCliListSessions !== 'function') return [];
+    return await window.electronAPI.claudeCliListSessions(payload);
+  }
+
+  /** Record/update this app's own entry for a conversation in sessions.json. */
+  async claudeCliRecordSession(payload: object): Promise<{ ok: boolean; error?: string }> {
+    if (!this.isElectron || typeof window.electronAPI.claudeCliRecordSession !== 'function') {
+      return { ok: false, error: 'Electron bridge unavailable' };
+    }
+    return await window.electronAPI.claudeCliRecordSession(payload);
+  }
+
+  /** Read one transcript back into chat messages. */
+  async claudeCliLoadSession(filePath: string): Promise<{
+    ok: boolean; sessionId?: string; cwd?: string; error?: string;
+    messages: { role: 'user' | 'assistant'; content: string }[];
+  }> {
+    if (!this.isElectron || typeof window.electronAPI.claudeCliLoadSession !== 'function') {
+      return { ok: false, error: 'Restart Electron to enable session history', messages: [] };
+    }
+    return await window.electronAPI.claudeCliLoadSession({ filePath });
+  }
+
   // --- AI Streaming ---
 
   aiStreamStart(payload: object): void {
@@ -174,7 +248,22 @@ export class ElectronService {
     if (this.isElectron) await window.electronAPI.aiStreamCancel(requestId);
   }
 
-  onAiStreamChunk(callback: (data: { requestId: string; type: string; text?: string; error?: string }) => void): () => void {
+  onAiStreamChunk(callback: (data: {
+    requestId: string;
+    type: string;
+    text?: string;
+    error?: string;
+    /** Claude CLI: session to resume on the next turn. */
+    sessionId?: string;
+    /** Claude CLI: token counts, including cache hits, for the finished turn. */
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheCreationTokens?: number;
+      cacheReadTokens?: number;
+      costUsd?: number;
+    };
+  }) => void): () => void {
     if (this.isElectron) {
       const unsubscribe = window.electronAPI.onAiStreamChunk(callback);
       if (typeof unsubscribe === 'function') return unsubscribe;

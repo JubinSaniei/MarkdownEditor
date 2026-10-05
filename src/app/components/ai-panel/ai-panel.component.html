@@ -17,7 +17,23 @@
     </svg>
     <span class="aip-title">AI Assistant</span>
     <span class="aip-provider-badge">{{ providerLabel }}</span>
+    <span class="aip-session-badge" *ngIf="isCliSessionActive"
+          title="Conversation is being resumed on the CLI — documents are sent once and the prompt cache stays warm">
+      session
+    </span>
+    <span class="aip-cache-badge" *ngIf="cacheSummary"
+          title="Prompt-cache tokens read vs. newly written on the last turn">
+      {{ cacheSummary }}
+    </span>
     <div class="aip-header-actions">
+      <button class="aip-icon-btn" *ngIf="activeProvider === 'claude-cli'"
+              (click)="toggleSessionPicker()" title="Past conversations">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3 2"/>
+        </svg>
+      </button>
       <button class="aip-icon-btn" (click)="clearChat()" title="Clear chat">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -41,6 +57,29 @@
         </svg>
       </button>
     </div>
+  </div>
+
+  <!-- ── Session history picker ───────────────────────────────── -->
+  <div class="aip-session-picker" *ngIf="showSessionPicker">
+    <div class="aip-session-picker-head">
+      <span>Past conversations</span>
+      <button class="aip-icon-btn" (click)="showSessionPicker = false" title="Close">
+        <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+    <div class="aip-session-empty" *ngIf="isLoadingSessions">Loading…</div>
+    <div class="aip-session-empty" *ngIf="!isLoadingSessions && sessions.length === 0">
+      No saved conversations yet.
+    </div>
+    <button class="aip-session-item" *ngFor="let s of sessions"
+            (click)="loadSession(s)" [title]="s.cwd">
+      <span class="aip-session-title">{{ s.title }}</span>
+      <span class="aip-session-meta">
+        {{ s.messageCount }} msg · {{ sessionTimeLabel(s.updatedAt) }}
+      </span>
+    </button>
   </div>
 
   <!-- ── Messages ─────────────────────────────────────────────── -->

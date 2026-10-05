@@ -35,14 +35,30 @@ export class AiService implements OnDestroy {
         payload['bedrockProfile'] = s.bedrock.profile;
         payload['bedrockRegion']  = s.bedrock.region;
         payload['bedrockModelId'] = s.bedrock.modelId;
+      } else if (request.provider === 'claude-cli') {
+        payload['claudeCliPath']       = s.claudeCli.cliPath;
+        payload['claudeCliModel']      = s.claudeCli.model;
+        // A session loaded from history must run in the directory recorded in
+        // its transcript; new conversations use the configured scope.
+        payload['claudeCliWorkingDir'] = request.workingDir || s.claudeCli.workingDir || '';
+        payload['claudeCliConfigDir']  = s.claudeCli.configDir;
+        payload['claudeCliIgnoreEnvAuth'] = s.claudeCli.ignoreEnvAuth !== false;
+        payload['claudeCliSafeMode']   = s.claudeCli.safeMode !== false;
+        // The CLI owns the transcript. Passing a sessionId makes it resume that
+        // conversation, so we deliberately do NOT send `history` — replaying it
+        // would duplicate the turns and break the cached prefix.
+        payload['claudeCliSessionId']  = request.sessionId ?? null;
+        payload['history'] = [];
       }
 
       const unsubscribeChunk = this.electronService.onAiStreamChunk((data) => {
         if (data.requestId !== requestId) return;
         this.ngZone.run(() => {
-          if (data.type === 'chunk')       subscriber.next({ type: 'chunk', text: data.text });
-          else if (data.type === 'done')   { subscriber.next({ type: 'done' }); subscriber.complete(); }
-          else if (data.type === 'error')  subscriber.error(new Error(data.error ?? 'Stream error'));
+          if (data.type === 'chunk')         subscriber.next({ type: 'chunk', text: data.text });
+          else if (data.type === 'session')  subscriber.next({ type: 'session', sessionId: data.sessionId });
+          else if (data.type === 'usage')    subscriber.next({ type: 'usage', usage: data.usage });
+          else if (data.type === 'done')     { subscriber.next({ type: 'done' }); subscriber.complete(); }
+          else if (data.type === 'error')    subscriber.error(new Error(data.error ?? 'Stream error'));
         });
       });
 

@@ -51,6 +51,86 @@
   white-space: nowrap;
 }
 
+// ── Session history picker ──────────────────────────────────
+.aip-session-picker {
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  max-height: 260px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.aip-session-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+}
+
+.aip-session-empty {
+  padding: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: .8;
+}
+
+.aip-session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+
+  &:hover { background: var(--hover-bg); }
+}
+
+.aip-session-title {
+  font-size: 11.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aip-session-meta {
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: .85;
+}
+
+// Resumed-session indicator: the conversation lives in the CLI, so documents
+// are uploaded once instead of on every turn.
+.aip-session-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+// Prompt-cache accounting for the last turn.
+.aip-cache-badge {
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: .8;
+  white-space: nowrap;
+}
+
 .aip-header-actions {
   display: flex;
   align-items: center;
@@ -153,6 +233,10 @@
   line-height: 1.55;
   color: var(--text-primary);
   word-break: break-word;
+  // Chat content is meant to be read and lifted out — keep it selectable
+  // regardless of any user-select rule inherited from an ancestor.
+  user-select: text;
+  cursor: text;
   background: var(--input-bg);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);

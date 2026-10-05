@@ -31,6 +31,11 @@
                  [(ngModel)]="settings.activeProvider">
           <span>AWS Bedrock</span>
         </label>
+        <label class="asm-radio">
+          <input type="radio" name="activeProvider" value="claude-cli"
+                 [(ngModel)]="settings.activeProvider">
+          <span>Claude CLI</span>
+        </label>
       </div>
     </div>
 
@@ -42,6 +47,8 @@
               (click)="setActiveTab('anthropic')">Anthropic</button>
       <button class="asm-tab" [class.active]="activeTab === 'bedrock'"
               (click)="setActiveTab('bedrock')">AWS Bedrock</button>
+      <button class="asm-tab" [class.active]="activeTab === 'claude-cli'"
+              (click)="setActiveTab('claude-cli')">Claude CLI</button>
     </div>
 
     <!-- OpenAI Panel -->
@@ -192,6 +199,106 @@
       </div>
     </div>
 
+    <!-- Claude CLI Panel -->
+    <div class="asm-panel" *ngIf="activeTab === 'claude-cli'">
+      <p class="asm-env-hint">
+        Uses your local <code>claude</code> login — no API key needed here.
+        Tools, MCP servers and slash commands are always disabled; the CLI is
+        used purely as a chat transport.
+      </p>
+
+      <div class="asm-field">
+        <label class="asm-field-label">CLI Path</label>
+        <input class="asm-input" type="text"
+               placeholder="claude"
+               [(ngModel)]="settings.claudeCli.cliPath">
+        <p class="asm-env-hint">Leave as <code>claude</code> to resolve it on PATH, or give a full path.</p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Model <span class="asm-optional">(optional)</span></label>
+        <input class="asm-input" type="text"
+               placeholder="e.g. haiku, sonnet, opus"
+               [(ngModel)]="settings.claudeCli.model">
+        <p class="asm-env-hint">Empty uses whatever the CLI is configured to use.</p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Config Directory <span class="asm-optional">(optional)</span></label>
+        <input class="asm-input" type="text"
+               placeholder="(default: ~/.claude)"
+               [(ngModel)]="settings.claudeCli.configDir">
+        <p class="asm-env-hint">
+          Sets <code>CLAUDE_CONFIG_DIR</code> — which <strong>account</strong> the CLI
+          logs in as. Point this at the config home holding the login you want,
+          e.g. <code>C:\Users\you\.claude-max</code>.
+        </p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-field-label">Session Scope <span class="asm-optional">(optional)</span></label>
+        <input class="asm-input" type="text"
+               placeholder="(app data folder)"
+               [(ngModel)]="settings.claudeCli.workingDir">
+        <p class="asm-env-hint">
+          Groups this app's conversations so the history picker can show them
+          apart from your other Claude Code sessions. <strong>No files are written
+          here</strong> — transcripts live in the config directory. Keep it stable;
+          changing it hides existing conversations from the picker.
+        </p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-radio">
+          <input type="checkbox" [(ngModel)]="settings.claudeCli.ignoreEnvAuth">
+          <span>Ignore inherited ANTHROPIC_* variables (recommended)</span>
+        </label>
+        <p class="asm-env-hint">
+          Removes <code>ANTHROPIC_BASE_URL</code> / <code>ANTHROPIC_AUTH_TOKEN</code> etc.
+          from the CLI's environment. They override the Config Directory, so a
+          corporate gateway exported in your shell would otherwise be used
+          instead of the account selected above.
+        </p>
+      </div>
+
+      <div class="asm-field">
+        <label class="asm-radio">
+          <input type="checkbox" [(ngModel)]="settings.claudeCli.safeMode">
+          <span>Safe mode (recommended)</span>
+        </label>
+        <p class="asm-env-hint">
+          Disables CLAUDE.md, plugins, hooks and custom agents for a stable
+          prompt cache. <strong>Uncheck this if your CLI gets its endpoint or
+          credentials from a settings file</strong> — safe mode ignores those.
+        </p>
+      </div>
+    </div>
+
+    <!-- Connection test result -->
+    <div class="asm-test-result" *ngIf="testResult"
+         [class.ok]="testResult.ok" [class.fail]="!testResult.ok">
+      <div class="asm-test-headline">
+        {{ testResult.ok ? '✓ Connection OK' : '✗ Connection failed' }}
+        <span class="asm-test-status" *ngIf="testResult.status">HTTP {{ testResult.status }}</span>
+      </div>
+      <div class="asm-test-stage" *ngFor="let stage of testResult.stages"
+           [class.ok]="stage.ok" [class.fail]="!stage.ok">
+        <span class="asm-test-stage-mark">{{ stage.ok ? '✓' : '✗' }}</span>
+        <span class="asm-test-stage-name">{{ stage.name }}</span>
+        <span class="asm-test-status" *ngIf="stage.status">HTTP {{ stage.status }}</span>
+        <code>{{ stage.url }}</code>
+      </div>
+      <div class="asm-test-row" *ngIf="!testResult.stages && testResult.url">
+        <span class="asm-test-label">Endpoint</span><code>{{ testResult.url }}</code>
+      </div>
+      <div class="asm-test-row" *ngIf="testResult.keySource">
+        <span class="asm-test-label">Credential</span>
+        <code>{{ testResult.keyPreview }}</code>
+        <span class="asm-test-note">from {{ keySourceLabel }}</span>
+      </div>
+      <pre class="asm-test-body">{{ testResult.message }}</pre>
+    </div>
+
     <!-- Error -->
     <div class="asm-error" *ngIf="saveError">
       <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor">
@@ -202,6 +309,11 @@
 
     <!-- Footer -->
     <div class="asm-footer">
+      <button class="asm-btn asm-btn-test" (click)="testConnection()" [disabled]="isTesting"
+              title="Probe this provider's endpoint with the credential the app actually uses">
+        {{ isTesting ? 'Testing…' : 'Test connection' }}
+      </button>
+      <span class="asm-footer-spacer"></span>
       <button class="asm-btn asm-btn-cancel" (click)="close()">Cancel</button>
       <button class="asm-btn asm-btn-save" (click)="save()" [disabled]="isSaving">
         {{ isSaving ? 'Saving…' : 'Save' }}

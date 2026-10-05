@@ -1,5 +1,5 @@
 import {
-  Component, Input, OnChanges, OnDestroy,
+  Component, Input, Output, EventEmitter, OnChanges, OnDestroy,
   ViewChild, ElementRef, ViewEncapsulation, AfterViewChecked
 } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -20,6 +20,10 @@ import { ThemeService } from '../../services/theme.service';
 })
 export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterViewChecked {
   @Input() content: string = '';
+  /** Absolute path of the file currently being previewed, used to resolve relative markdown links. */
+  @Input() basePath: string | null = null;
+  /** Emits the resolved absolute path when the user clicks a link pointing at another markdown file. */
+  @Output() internalLinkClicked = new EventEmitter<string>();
   @ViewChild('previewContent') previewElement!: ElementRef<HTMLDivElement>;
 
   htmlContent: SafeHtml = '';
@@ -48,17 +52,60 @@ export class MarkdownPreviewComponent implements OnChanges, OnDestroy, AfterView
     if (!anchor) return;
     const href = anchor.getAttribute('href') || '';
 
+    // Always block default navigation inside the app/renderer — any in-place
+    // navigation here would unload the Angular app itself.
+    event.preventDefault();
+
     if (href.startsWith('#')) {
-      event.preventDefault();
       const target = this.previewElement?.nativeElement.querySelector(
         '#' + CSS.escape(href.slice(1))
       ) as HTMLElement | null;
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else if (href.startsWith('http://') || href.startsWith('https://')) {
-      event.preventDefault();
-      this.electronService.openExternal(href);
+      return;
     }
+
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      // External URL — open in the user's default system browser.
+      this.electronService.openExternal(href);
+      return;
+    }
+
+    if (/^(mailto|tel):/i.test(href)) {
+      this.electronService.openExternal(href);
+      return;
+    }
+
+    // Reference to another local markdown file — open it as a new tab.
+    const [pathPart] = href.split('#');
+    if (pathPart && /\.(md|markdown)$/i.test(pathPart)) {
+      const resolved = this.resolveRelativePath(pathPart);
+      if (resolved) this.internalLinkClicked.emit(resolved);
+      return;
+    }
+
+    // Anything else (unresolvable relative path, unsupported protocol, etc.) — ignore.
   };
+
+  /** Resolves a relative markdown link against basePath's directory into an absolute path. */
+  private resolveRelativePath(relativePath: string): string | null {
+    if (!this.basePath) return null;
+    // Absolute path already (Windows drive letter, or POSIX leading slash).
+    if (/^[a-zA-Z]:[\\/]/.test(relativePath) || relativePath.startsWith('/')) {
+      return relativePath;
+    }
+
+    const sep = this.basePath.includes('\\') && !this.basePath.includes('/') ? '\\' : '/';
+    const baseDirParts = this.basePath.split(/[\\/]/);
+    baseDirParts.pop(); // drop file name, keep directory
+    const relParts = relativePath.split(/[\\/]/);
+
+    for (const part of relParts) {
+      if (part === '' || part === '.') continue;
+      if (part === '..') baseDirParts.pop();
+      else baseDirParts.push(part);
+    }
+    return baseDirParts.join(sep);
+  }
 
   constructor(
     private sanitizer: DomSanitizer,

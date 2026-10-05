@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, Output, EventEmitter } from '@angular/cor
 import { Subscription } from 'rxjs';
 import { AiProvider, AiNonSensitiveSettings, AiKeyStatus } from '../../interfaces/ai-settings.interface';
 import { AiSettingsService } from '../../services/ai-settings.service';
-import { ElectronService } from '../../services/electron.service';
+import { ElectronService, AiConnectionTestResult } from '../../services/electron.service';
 
 @Component({
   selector: 'app-ai-settings',
@@ -26,6 +26,10 @@ export class AiSettingsComponent implements OnInit, OnDestroy {
   saveError: string = '';
   isSaving: boolean = false;
 
+  // ── Connection test (per tab) ──────────────────────────────
+  isTesting: boolean = false;
+  testResult: AiConnectionTestResult | null = null;
+
   private keyStatusSub!: Subscription;
 
   constructor(
@@ -40,6 +44,7 @@ export class AiSettingsComponent implements OnInit, OnDestroy {
       openai: { ...snap.openai },
       anthropic: { ...snap.anthropic },
       bedrock: { ...snap.bedrock },
+      claudeCli: { ...snap.claudeCli },
     };
     this.activeTab = snap.activeProvider;
 
@@ -54,6 +59,53 @@ export class AiSettingsComponent implements OnInit, OnDestroy {
 
   setActiveTab(tab: AiProvider): void {
     this.activeTab = tab;
+    this.testResult = null; // a result from another provider would be misleading
+  }
+
+  /**
+   * Probe the endpoint for the tab currently being edited.
+   *
+   * Tests the *unsaved* form values so you can iterate on a base URL without
+   * committing it first. The key, however, comes from the main process — an
+   * unsaved key in the input box is not used, so save before testing a new key.
+   */
+  async testConnection(): Promise<void> {
+    this.isTesting = true;
+    this.testResult = null;
+    try {
+      this.testResult = await this.electronService.aiTestConnection({
+        provider: this.activeTab,
+        openaiBaseUrl: this.settings.openai.baseUrl,
+        openaiModel: this.settings.openai.model,
+        anthropicBaseUrl: this.settings.anthropic.baseUrl,
+        anthropicModel: this.settings.anthropic.model,
+        bedrockProfile: this.settings.bedrock.profile,
+        bedrockRegion: this.settings.bedrock.region,
+        bedrockModelId: this.settings.bedrock.modelId,
+        claudeCliPath: this.settings.claudeCli.cliPath,
+        claudeCliModel: this.settings.claudeCli.model,
+
+        claudeCliConfigDir: this.settings.claudeCli.configDir,
+        claudeCliWorkingDir: this.settings.claudeCli.workingDir,
+        claudeCliIgnoreEnvAuth: this.settings.claudeCli.ignoreEnvAuth !== false,
+        claudeCliSafeMode: this.settings.claudeCli.safeMode !== false,
+      });
+    } catch (err: any) {
+      this.testResult = { ok: false, message: err?.message || 'Test failed' };
+    } finally {
+      this.isTesting = false;
+    }
+  }
+
+  /** Human-readable explanation of where the credential came from. */
+  get keySourceLabel(): string {
+    switch (this.testResult?.keySource) {
+      case 'saved':         return 'saved key (safeStorage)';
+      case 'saved-corrupt': return 'saved key could NOT be decrypted — fell back to environment variable';
+      case 'env':           return 'environment variable';
+      case 'none':          return 'no key found';
+      default:              return this.testResult?.keySource ?? '';
+    }
   }
 
   onBackdropClick(event: MouseEvent): void {
